@@ -109,5 +109,6 @@ public class CapturedStreamOutput extends StreamOutput {
                     IOUtils.closeQuietly(outputStream);
             }
         }
+        return true;
     }
 }

@@ -83,8 +83,10 @@ public class NovelAdjacencyReferenceLocations {
         protected int downstreamBreakpointRefPos;
 
         final Tuple2<SimpleInterval, SimpleInterval> getLeftJustifiedBreakpoints() {
-            return new Tuple2<>(new SimpleInterval(upstreamBreakpointRefContig, upstreamBreakpointRefPos, upstreamBreakpointRefPos),
-                                new SimpleInterval(downstreamBreakpointRefContig, downstreamBreakpointRefPos, downstreamBreakpointRefPos));
+            final int upsPos = upstreamBreakpointRefPos <= 0 ? 1 : upstreamBreakpointRefPos;
+            final int downPos = downstreamBreakpointRefPos <= 0 ? 1 : downstreamBreakpointRefPos;
+            return new Tuple2<>(new SimpleInterval(upstreamBreakpointRefContig, upsPos, upsPos),
+                                new SimpleInterval(downstreamBreakpointRefContig, downPos, downPos));
         }
 
         static final BreakpointsInference getInferenceClass(final ChimericAlignment chimericAlignment,

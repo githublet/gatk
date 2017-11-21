@@ -54,6 +54,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private VariantContextWriter vcfWriter;
 
     private PrintStream outputStream = null;
+    private boolean noSamples = true;
 
     @Override
     public void onTraversalStart() {
@@ -65,6 +66,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         VariantRecalibrationUtils.addVQSRStandardHeaderLines(hInfo);
         final TreeSet<String> samples = new TreeSet<>();
         samples.addAll(inputHeader.getGenotypeSamples());
+        if(samples.size() > 0) noSamples = false;
         hInfo.addAll(getDefaultToolVCFHeaderLines());
         final VCFHeader vcfHeader = new VCFHeader(hInfo, samples);
 
@@ -101,37 +103,51 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     @Override
     public void apply(final VariantContext variant, final ReadsContext readsContext, final ReferenceContext referenceContext, final FeatureContext featureContext) {
         referenceContext.setWindow(63, 64);
-        transferVariantSummaryToPython(variant, referenceContext);
+        transferToPythonViaFifo(variant, referenceContext);
+
+        //transferVariantSummaryToPython(variant, referenceContext);
+    }
+
+    private void transferToPythonViaFifo(final VariantContext variant, final ReferenceContext referenceContext) {
+        try {
+            String varData = getVariantDataString(variant, referenceContext);
+            String ref = new String(Arrays.copyOfRange(referenceContext.getBases(),0,128), "UTF-8");
+            String genos = "\t.";
+            if (noSamples) genos = "";
+            // write summary data to the FIFO
+            fifoWriter.write(String.format("%s|%s|%s|%s|%s\n",
+                    ref,
+                    variant.getAttributes().toString(),
+                    varData,
+                    GATKVCFConstants.CNN_1D_KEY,
+                    genos));
+
+            // NOTE: flush the stream since we're going to immediately issue a Python command to read it.
+            // Failure to flush the stream could result in Python blocking on the read.
+            fifoWriter.flush();
+        }
+        catch ( IOException e ) {
+            throw new GATKException("Failure writing to FIFO", e);
+        }
+
+        // Send a synchronous command (wait for the response prompt) to Python to consume the line written to the FIFO
+        if(variant.isSNP()) {
+            pythonExecutor.sendSynchronousCommand("vqsr_cnn.write_snp_score(model, tempFile, fifoFile.readline())" + NL);
+        } else if(variant.isIndel()){
+            pythonExecutor.sendSynchronousCommand("vqsr_cnn.write_indel_score(model, tempFile, fifoFile.readline())" + NL);
+        }
     }
 
 
     private void transferVariantSummaryToPython(final VariantContext variant, final ReferenceContext referenceContext) {
         try {
+            String varData = getVariantDataString(variant, referenceContext);
             String ref = new String(Arrays.copyOfRange(referenceContext.getBases(),0,128), "UTF-8");
-
-            String varInfo = "";
-            for(final String attributeKey : variant.getAttributes().keySet()){
-                varInfo += attributeKey + "=" + variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";";
-            }
-
-            String alts = variant.getAlternateAlleles().toString().replace(" ", "");
-            alts = alts.substring(1, alts.length()-1);
-
             String genos = "\t.";
-
-            String varData = String.format("%s\t%d\t.\t%s\t%s\t%.3f\t.\t%s",
-                    variant.getContig(),
-                    variant.getStart(),
-                    variant.getReference().getBaseString(),
-                    alts,
-                    variant.getPhredScaledQual(),
-                    varInfo
-            );
 
             if(variant.isSNP()){
                 pythonExecutor.sendSynchronousCommand(String.format("score = vqsr_cnn.snp_score_from_reference_annotations(model, '%s', '%s')\n", ref, variant.getAttributes().toString()));
-            }
-            else if(variant.isIndel()){
+            } else if(variant.isIndel()){
                 pythonExecutor.sendSynchronousCommand(String.format("score = vqsr_cnn.indel_score_from_reference_annotations(model, '%s', '%s')\n", ref, variant.getAttributes().toString()));
             }
             pythonExecutor.sendSynchronousCommand(String.format("tempFile.write('%s'+'%s='+str(score)+'%s'+str('\\n'))\n", varData, GATKVCFConstants.CNN_1D_KEY, genos));
@@ -143,6 +159,26 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
     }
 
+    private String getVariantDataString(final VariantContext variant, final ReferenceContext referenceContext){
+        String varInfo = "";
+        for (final String attributeKey : variant.getAttributes().keySet()) {
+            varInfo += attributeKey + "=" + variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";";
+        }
+
+        String alts = variant.getAlternateAlleles().toString().replace(" ", "");
+        alts = alts.substring(1, alts.length() - 1);
+
+        String varData = String.format("%s\t%d\t.\t%s\t%s\t%.3f\t.\t%s",
+                variant.getContig(),
+                variant.getStart(),
+                variant.getReference().getBaseString(),
+                alts,
+                variant.getPhredScaledQual(),
+                varInfo
+        );
+
+        return varData;
+    }
 
     @Override
     public Object onTraversalSuccess() {

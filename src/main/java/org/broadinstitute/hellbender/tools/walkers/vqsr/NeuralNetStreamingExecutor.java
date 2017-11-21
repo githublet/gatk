@@ -119,7 +119,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
             String genos = "\t.";
 
-            String varData = String.format("%s\t%d\t.\t%s\t%s\t%0.3f\t.\t%s",
+            String varData = String.format("%s\t%d\t.\t%s\t%s\t%.3f\t.\t%s",
                     variant.getContig(),
                     variant.getStart(),
                     variant.getReference().getBaseString(),

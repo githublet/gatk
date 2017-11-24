@@ -126,6 +126,10 @@ public abstract class ProcessControllerBase<CAPTURE_POLICY extends CapturedStrea
         private final ProcessStream key; // un-referenced, but retained for debugging
         private final String controllerContextName;  // un-referenced, but retained for debugging
 
+        //TODO: use controllerContextName
+        private final String controllerContextName;
+        private final CAPTURE_POLICY capturedProcessStream;
+
         /**
          * Reads in the output of a stream on a background thread to keep the output pipe from backing up and freezing the called process.
          *

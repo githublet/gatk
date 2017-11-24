@@ -7,6 +7,7 @@ import org.broadinstitute.hellbender.utils.runtime.AsynchronousStreamWriterServi
 import org.broadinstitute.hellbender.utils.runtime.ProcessOutput;
 import org.broadinstitute.hellbender.utils.runtime.StreamingPythonTestUtils;
 import org.testng.Assert;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 

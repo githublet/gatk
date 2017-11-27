@@ -45,6 +45,11 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     @Argument(fullName = "architecture", shortName = "a", doc = "Neural Net architecture and weights hd5 file", optional = false)
     private String architecture = null;
 
+    @Argument(fullName = "batchSize", shortName = "bs", doc = "Size of the mini-batches to evaluate with python.", optional = true)
+    private int batchSize = 1;
+
+    @Argument(fullName = "keepInfo", shortName = "ki", doc = "Keep info fields in the score vcf-like file.", optional = true)
+    private boolean keepInfo = true;
 
     // Create the Python executor. This doesn't actually start the Python process, but verifies that
     // the requestedPython executable exists and can be located.
@@ -55,6 +60,13 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
     private PrintStream outputStream = null;
     private boolean noSamples = true;
+    private int curBatchSize = 0;
+    private String pythonCommand = "";
+
+    @Override
+    public boolean requiresReference(){
+        return true;
+    }
 
     @Override
     public void onTraversalStart() {
@@ -95,9 +107,10 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         pythonExecutor.sendSynchronousCommand(String.format("tempFile = open('%s', 'a')" + NL, outputFile.getAbsolutePath()));
         pythonExecutor.sendSynchronousCommand("from keras.models import load_model" + NL);
         pythonExecutor.sendSynchronousCommand("import vqsr_cnn" + NL);
-        logger.info("Imported from vqsr cnn.");
         pythonExecutor.sendSynchronousCommand(String.format("model = load_model('%s')", architecture) + NL);
-        logger.info("Loaded architecture:"+architecture);
+        pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", batchSize) + NL;
+        logger.info("Loaded architecture:"+architecture + " \nPython command is:"+pythonCommand);
+
     }
 
     @Override
@@ -109,32 +122,39 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     }
 
     private void transferToPythonViaFifo(final VariantContext variant, final ReferenceContext referenceContext) {
-        try {
-            String varData = getVariantDataString(variant, referenceContext);
-            String ref = new String(Arrays.copyOfRange(referenceContext.getBases(),0,128), "UTF-8");
-            String genos = "\t.";
-            if (noSamples) genos = "";
-            // write summary data to the FIFO
-            fifoWriter.write(String.format("%s|%s|%s|%s|%s\n",
-                    ref,
-                    variant.getAttributes().toString(),
-                    varData,
-                    GATKVCFConstants.CNN_1D_KEY,
-                    genos));
 
-            // NOTE: flush the stream since we're going to immediately issue a Python command to read it.
-            // Failure to flush the stream could result in Python blocking on the read.
-            fifoWriter.flush();
-        }
-        catch ( IOException e ) {
-            throw new GATKException("Failure writing to FIFO", e);
-        }
+        if (variant.isSNP() || variant.isIndel()) {
+            try {
+                String varData = getVariantDataString(variant, referenceContext);
+                String ref = new String(Arrays.copyOfRange(referenceContext.getBases(), 0, 128), "UTF-8");
+                String genos = "\t.";
+                if (noSamples) genos = "";
+                String isSnp = variant.isSNP() ? "1" : "0";
 
-        // Send a synchronous command (wait for the response prompt) to Python to consume the line written to the FIFO
-        if(variant.isSNP()) {
-            pythonExecutor.sendSynchronousCommand("vqsr_cnn.write_snp_score(model, tempFile, fifoFile.readline())" + NL);
-        } else if(variant.isIndel()){
-            pythonExecutor.sendSynchronousCommand("vqsr_cnn.write_indel_score(model, tempFile, fifoFile.readline())" + NL);
+                // write summary data to the FIFO
+                fifoWriter.write(String.format("%s|%s|%s|%s|%s|%s|\n",
+                        ref,
+                        variant.getAttributes().toString(),
+                        varData,
+                        GATKVCFConstants.CNN_1D_KEY,
+                        genos,
+                        isSnp));
+                curBatchSize++;
+            } catch (UnsupportedEncodingException e) {
+                throw new GATKException("Trying to make string from reference, but unsupported encoding UTF-8.", e);
+            } catch (IOException e) {
+                throw new GATKException("Failure writing to FIFO", e);
+            }
+
+            if(curBatchSize == batchSize){
+                try {
+                    fifoWriter.flush();
+                    pythonExecutor.sendSynchronousCommand(pythonCommand);
+                    curBatchSize = 0;
+                } catch (IOException e) {
+                    throw new GATKException("Failure flushing FIFO", e);
+                }
+            }
         }
     }
 
@@ -161,14 +181,16 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
     private String getVariantDataString(final VariantContext variant, final ReferenceContext referenceContext){
         String varInfo = "";
-        for (final String attributeKey : variant.getAttributes().keySet()) {
-            varInfo += attributeKey + "=" + variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";";
+        if(keepInfo) {
+            for (final String attributeKey : variant.getAttributes().keySet()) {
+                varInfo += attributeKey + "=" + variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";";
+            }
         }
 
         String alts = variant.getAlternateAlleles().toString().replace(" ", "");
         alts = alts.substring(1, alts.length() - 1);
 
-        String varData = String.format("%s\t%d\t.\t%s\t%s\t%.3f\t.\t%s",
+        String varData = String.format("%s\t%d\t.\t%s\t%s\t%.2f\t.\t%s",
                 variant.getContig(),
                 variant.getStart(),
                 variant.getReference().getBaseString(),
@@ -182,7 +204,16 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
     @Override
     public Object onTraversalSuccess() {
-        pythonExecutor.sendSynchronousCommand("tempFile.close()\n");
+        if(curBatchSize > 0){
+            try {
+                fifoWriter.flush();
+                pythonExecutor.sendSynchronousCommand(pythonCommand);
+                curBatchSize = 0;
+            } catch (IOException e) {
+                throw new GATKException("Failure flushing FIFO", e);
+            }
+        }
+        pythonExecutor.sendSynchronousCommand("tempFile.close()" + NL);
 
         return true;
     }

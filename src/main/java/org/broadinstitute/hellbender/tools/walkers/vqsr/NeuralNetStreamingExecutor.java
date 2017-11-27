@@ -48,7 +48,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     @Argument(fullName = "batchSize", shortName = "bs", doc = "Size of the mini-batches to evaluate with python.", optional = true)
     private int batchSize = 1;
 
-    @Argument(fullName = "keepInfo", shortName = "ki", doc = "Keep info fields in the score vcf-like file.", optional = true)
+    @Argument(fullName = "keepInfo", shortName = "ki", doc = "Keep info fields in the vcf-like score file.", optional = true)
     private boolean keepInfo = true;
 
     // Create the Python executor. This doesn't actually start the Python process, but verifies that
@@ -110,19 +110,16 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         pythonExecutor.sendSynchronousCommand(String.format("model = load_model('%s')", architecture) + NL);
         pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", batchSize) + NL;
         logger.info("Loaded architecture:"+architecture + " \nPython command is:"+pythonCommand);
-
     }
 
     @Override
     public void apply(final VariantContext variant, final ReadsContext readsContext, final ReferenceContext referenceContext, final FeatureContext featureContext) {
         referenceContext.setWindow(63, 64);
         transferToPythonViaFifo(variant, referenceContext);
-
         //transferVariantSummaryToPython(variant, referenceContext);
     }
 
     private void transferToPythonViaFifo(final VariantContext variant, final ReferenceContext referenceContext) {
-
         if (variant.isSNP() || variant.isIndel()) {
             try {
                 String varData = getVariantDataString(variant, referenceContext);
@@ -134,7 +131,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
                 // write summary data to the FIFO
                 fifoWriter.write(String.format("%s|%s|%s|%s|%s|%s|\n",
                         ref,
-                        variant.getAttributes().toString(),
+                        getVariantInfoString(variant),
                         varData,
                         GATKVCFConstants.CNN_1D_KEY,
                         genos,
@@ -175,18 +172,10 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
-
-
     }
 
     private String getVariantDataString(final VariantContext variant, final ReferenceContext referenceContext){
-        String varInfo = "";
-        if(keepInfo) {
-            for (final String attributeKey : variant.getAttributes().keySet()) {
-                varInfo += attributeKey + "=" + variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";";
-            }
-        }
-
+        String varInfo = keepInfo ? getVariantInfoString(variant) : "" ;
         String alts = variant.getAlternateAlleles().toString().replace(" ", "");
         alts = alts.substring(1, alts.length() - 1);
 
@@ -200,6 +189,14 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         );
 
         return varData;
+    }
+
+    private String getVariantInfoString(final VariantContext variant){
+        String varInfo = "";
+        for (final String attributeKey : variant.getAttributes().keySet()) {
+            varInfo += attributeKey + "=" + variant.getAttribute(attributeKey).toString().replace(" ", "").replace("[", "").replace("]", "") + ";";
+        }
+        return varInfo;
     }
 
     @Override
@@ -217,6 +214,5 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
         return true;
     }
-
 
 }

@@ -63,6 +63,8 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private int curBatchSize = 0;
     private String pythonCommand = "";
 
+    long totalLength = 0L;
+
     @Override
     public boolean requiresReference(){
         return true;
@@ -128,14 +130,32 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
                 if (noSamples) genos = "";
                 String isSnp = variant.isSNP() ? "1" : "0";
 
-                // write summary data to the FIFO
-                fifoWriter.write(String.format("%s|%s|%s|%s|%s|%s|\n",
+                final String outDat = String.format("%s|%s|%s|%s|%s|%s|\n",
                         ref,
                         getVariantInfoString(variant),
                         varData,
                         GATKVCFConstants.CNN_1D_KEY,
                         genos,
-                        isSnp));
+                        isSnp);
+
+                int len = outDat.length();
+                if((totalLength + len) >= (7 * 1024)){
+                    try {
+                        fifoWriter.flush();
+                        pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", curBatchSize) + NL;
+                        pythonExecutor.sendSynchronousCommand(pythonCommand);
+                        curBatchSize = 0;
+                    } catch (IOException e) {
+                        throw new GATKException("Failure flushing FIFO", e);
+                    }
+                    totalLength = 0;
+                    curBatchSize = 0;
+                }
+
+                totalLength += len;
+
+                // write summary data to the FIFO
+                fifoWriter.write(outDat);
                 curBatchSize++;
             } catch (UnsupportedEncodingException e) {
                 throw new GATKException("Trying to make string from reference, but unsupported encoding UTF-8.", e);
@@ -143,15 +163,6 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
                 throw new GATKException("Failure writing to FIFO", e);
             }
 
-            if(curBatchSize == batchSize){
-                try {
-                    fifoWriter.flush();
-                    pythonExecutor.sendSynchronousCommand(pythonCommand);
-                    curBatchSize = 0;
-                } catch (IOException e) {
-                    throw new GATKException("Failure flushing FIFO", e);
-                }
-            }
         }
     }
 

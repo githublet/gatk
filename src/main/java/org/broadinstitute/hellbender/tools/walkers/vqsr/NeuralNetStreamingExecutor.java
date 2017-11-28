@@ -40,13 +40,10 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     @Argument(fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
             doc = "Output file")
-    private File outputFile; // output file produced by Python code
+    private File outputFile = null; // output file produced by Python code
 
     @Argument(fullName = "architecture", shortName = "a", doc = "Neural Net architecture and weights hd5 file", optional = false)
     private String architecture = null;
-
-    @Argument(fullName = "batchSize", shortName = "bs", doc = "Size of the mini-batches to evaluate with python.", optional = true)
-    private int batchSize = 1;
 
     @Argument(fullName = "keepInfo", shortName = "ki", doc = "Keep info fields in the vcf-like score file.", optional = true)
     private boolean keepInfo = true;
@@ -58,7 +55,6 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private FileWriter fifoWriter;
     private VariantContextWriter vcfWriter;
 
-    private PrintStream outputStream = null;
     private boolean noSamples = true;
     private int curBatchSize = 0;
     private String pythonCommand = "";
@@ -90,7 +86,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
         // Start the Python process, and get a FIFO from the executor to use to send data to Python. The lifetime
         // of the FIFO is managed by the executor; the FIFO will be destroyed when the executor is destroyed.
-        pythonExecutor.start(Collections.emptyList(), true);
+        pythonExecutor.start(Collections.emptyList(), false);
         final File fifoFile = pythonExecutor.getFIFOForWrite();
 
         // Open the FIFO for writing. Opening a FIFO for read or write will block until there is reader/writer
@@ -110,8 +106,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         pythonExecutor.sendSynchronousCommand("from keras.models import load_model" + NL);
         pythonExecutor.sendSynchronousCommand("import vqsr_cnn" + NL);
         pythonExecutor.sendSynchronousCommand(String.format("model = load_model('%s')", architecture) + NL);
-        pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", batchSize) + NL;
-        logger.info("Loaded architecture:"+architecture + " \nPython command is:"+pythonCommand);
+        logger.info("Loaded architecture:"+architecture);
     }
 
     @Override
@@ -124,11 +119,11 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private void transferToPythonViaFifo(final VariantContext variant, final ReferenceContext referenceContext) {
         if (variant.isSNP() || variant.isIndel()) {
             try {
-                String varData = getVariantDataString(variant, referenceContext);
                 String ref = new String(Arrays.copyOfRange(referenceContext.getBases(), 0, 128), "UTF-8");
+                String varData = getVariantDataString(variant, referenceContext);
+                String isSnp = variant.isSNP() ? "1" : "0";
                 String genos = "\t.";
                 if (noSamples) genos = "";
-                String isSnp = variant.isSNP() ? "1" : "0";
 
                 final String outDat = String.format("%s|%s|%s|%s|%s|%s|\n",
                         ref,
@@ -152,10 +147,9 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
                     curBatchSize = 0;
                 }
 
-                totalLength += len;
-
                 // write summary data to the FIFO
                 fifoWriter.write(outDat);
+                totalLength += len;
                 curBatchSize++;
             } catch (UnsupportedEncodingException e) {
                 throw new GATKException("Trying to make string from reference, but unsupported encoding UTF-8.", e);
@@ -215,13 +209,17 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         if(curBatchSize > 0){
             try {
                 fifoWriter.flush();
+                pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", curBatchSize) + NL;
                 pythonExecutor.sendSynchronousCommand(pythonCommand);
                 curBatchSize = 0;
             } catch (IOException e) {
                 throw new GATKException("Failure flushing FIFO", e);
             }
         }
+
         pythonExecutor.sendSynchronousCommand("tempFile.close()" + NL);
+        pythonExecutor.sendSynchronousCommand("fifoFile.close()" + NL);
+        pythonExecutor.terminate();
 
         return true;
     }

@@ -48,6 +48,9 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     @Argument(fullName = "keepInfo", shortName = "ki", doc = "Keep info fields in the vcf-like score file.", optional = true)
     private boolean keepInfo = true;
 
+    @Argument(fullName = "pythonBatchSize", shortName = "pbs", doc = "Size of batches for python to do inference.", optional = true)
+    private int pythonBatchSize = 256;
+
     // Create the Python executor. This doesn't actually start the Python process, but verifies that
     // the requestedPython executable exists and can be located.
     final StreamingPythonScriptExecutor pythonExecutor = new StreamingPythonScriptExecutor(true);
@@ -137,7 +140,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
                 if((totalLength + len) >= (7 * 1024)){
                     try {
                         fifoWriter.flush();
-                        pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", curBatchSize) + NL;
+                        pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d, %d)", curBatchSize, pythonBatchSize) + NL;
                         pythonExecutor.sendSynchronousCommand(pythonCommand);
                         curBatchSize = 0;
                     } catch (IOException e) {
@@ -209,7 +212,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
         if(curBatchSize > 0){
             try {
                 fifoWriter.flush();
-                pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d)", curBatchSize) + NL;
+                pythonCommand = String.format("vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d, %d)", curBatchSize, pythonBatchSize) + NL;
                 pythonExecutor.sendSynchronousCommand(pythonCommand);
                 curBatchSize = 0;
             } catch (IOException e) {

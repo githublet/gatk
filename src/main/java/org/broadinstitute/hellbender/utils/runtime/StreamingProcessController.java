@@ -309,8 +309,6 @@ public final class StreamingProcessController extends ProcessControllerBase<Capt
                     } else {
                         throw new TimeoutException("No stdout or stderr was available. The timeout period was exceeded.");
                     }
-                } else {
-                    throw new TimeoutException("No stdout or stderr was available. The timeout period was exceeded.");
                 }
             } catch (TimeoutException e) {
                 // we didn't get any stderr, but thats ok since we got stdout
@@ -319,12 +317,6 @@ public final class StreamingProcessController extends ProcessControllerBase<Capt
             } catch (ExecutionException e) {
                 throw new GATKException("ExecutionException retrieving stderr", e);
             }
-        } catch (TimeoutException e) {
-            // we didn't get any stderr, but thats ok since we got stdout
-        } catch (InterruptedException e) {
-            throw new GATKException("InterruptedException retrieving stderr", e);
-        } catch (ExecutionException e) {
-            throw new GATKException("ExecutionException retrieving stderr", e);
         }
 
         //log the output, and restart the listeners for next time

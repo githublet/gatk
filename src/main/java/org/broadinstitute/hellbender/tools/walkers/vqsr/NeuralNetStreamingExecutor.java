@@ -47,10 +47,10 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private boolean keepInfo = true;
 
     @Argument(fullName = "python-batch-size", shortName = "pbs", doc = "Size of batches for python to do inference.", optional = true)
-    private int pythonBatchSize = 256;
+    private int pythonBatchSize = 64;
 
     @Argument(fullName = "python-sync-frequency", shortName = "psf", doc = "Size of data to queue for Python streaming.", optional = true)
-    private int pythonSyncFrequency = 512;
+    private int pythonSyncFrequency = 128;
 
     // Create the Python executor. This doesn't actually start the Python process, but verifies that
     // the requestedPython executable exists and can be located.
@@ -90,7 +90,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
         // Start the Python process, and get a FIFO from the executor to use to send data to Python. The lifetime
         // of the FIFO is managed by the executor; the FIFO will be destroyed when the executor is destroyed.
-        pythonExecutor.start(Collections.emptyList(), true);
+        pythonExecutor.start(Collections.emptyList(), false);
         final File fifoFile = pythonExecutor.getFIFOForWrite();
 
         // Open the FIFO for writing. Opening a FIFO for read or write will block until there is reader/writer

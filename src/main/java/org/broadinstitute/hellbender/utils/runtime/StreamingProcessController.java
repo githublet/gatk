@@ -28,9 +28,9 @@ public final class StreamingProcessController extends ProcessControllerBase<Capt
     // Timeout used when retrieving output from the remote process to prevent the GATK main tool thread from\
     // excessive blocking. {@link #isOutputAvailable} can be used to to check for output before making a
     // blocking call in order to avoid exceeding timeouts.
-    private static final int TIME_OUT_MILLIS = 5000;
+    private static final int TIME_OUT_MILLIS = 15000;
     //Timeout used when terminating the remote process
-    private static final int REMOTE_PROCESS_TERMINATION_TIMEOUT_SECONDS = 10;
+    private static final int REMOTE_PROCESS_TERMINATION_TIMEOUT_SECONDS = 20;
 
     // keep an optional journal of all IPC; disabled/no-op by default
     private ProcessJournal processJournal = new ProcessJournal();

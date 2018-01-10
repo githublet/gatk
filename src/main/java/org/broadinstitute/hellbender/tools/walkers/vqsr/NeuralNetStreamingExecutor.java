@@ -47,10 +47,10 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private boolean keepInfo = true;
 
     @Argument(fullName = "python-batch-size", shortName = "pbs", doc = "Size of batches for python to do inference.", optional = true)
-    private int pythonBatchSize = 64;
+    private int pythonBatchSize = 256;
 
     @Argument(fullName = "python-sync-frequency", shortName = "psf", doc = "Size of data to queue for Python streaming.", optional = true)
-    private int pythonSyncFrequency = 128;
+    private int pythonSyncFrequency = 512;
 
     // Create the Python executor. This doesn't actually start the Python process, but verifies that
     // the requestedPython executable exists and can be located.
@@ -63,6 +63,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
     private boolean noSamples = true;
     private int curBatchSize = 0;
+    private boolean waitforBatchCompletion = false;
 
 
     @Override
@@ -90,7 +91,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
         // Start the Python process, and get a FIFO from the executor to use to send data to Python. The lifetime
         // of the FIFO is managed by the executor; the FIFO will be destroyed when the executor is destroyed.
-        pythonExecutor.start(Collections.emptyList(), false);
+        pythonExecutor.start(Collections.emptyList(), true);
         final File fifoFile = pythonExecutor.getFIFOForWrite();
 
         // Open the FIFO for writing. Opening a FIFO for read or write will block until there is reader/writer
@@ -104,6 +105,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
             throw new GATKException("Failure opening FIFO for writing", e);
         }
 
+        pythonExecutor.getAccumulatedOutput();
         asyncWriter = pythonExecutor.getAsynchronousStreamWriterService(fifoWriter, AsynchronousStreamWriterService.stringSerializer);
         batchList = new ArrayList<>(pythonSyncFrequency);
 
@@ -140,12 +142,17 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
                         isSnp);
 
                 if (curBatchSize == pythonSyncFrequency) {
-                    // wait for the last batch to complete before we start a new one
-                    asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
+                    if (waitforBatchCompletion == true) {
+                        // wait for the last batch to complete before we start a new one
+                        asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
+                        waitforBatchCompletion = false;
+                        pythonExecutor.getAccumulatedOutput();
+                    }
                     final String pythonCommand = String.format(
                             "vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d, %d)", curBatchSize, pythonBatchSize) + NL;
                     pythonExecutor.sendAsynchronousCommand(pythonCommand);
                     asyncWriter.startAsynchronousBatchWrite(batchList);
+                    waitforBatchCompletion = true;
                     curBatchSize = 0;
                     batchList = new ArrayList<>(pythonSyncFrequency);
                 }
@@ -186,13 +193,17 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
 
     @Override
     public Object onTraversalSuccess() {
-        asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
+        if (waitforBatchCompletion) {
+            asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
+            pythonExecutor.getAccumulatedOutput();
+        }
         if (curBatchSize > 0){
             final String pythonCommand = String.format(
                     "vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d, %d)", curBatchSize, pythonBatchSize) + NL;
             pythonExecutor.sendAsynchronousCommand(pythonCommand);
             asyncWriter.startAsynchronousBatchWrite(batchList);
             asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
+            pythonExecutor.getAccumulatedOutput();
         }
 
         pythonExecutor.sendSynchronousCommand("tempFile.close()" + NL);

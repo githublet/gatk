@@ -207,8 +207,8 @@ public class StreamingProcessControllerUnitTest extends BaseTest {
     }
 
     // this needs to have a testNG timeOut that is longer than the timeout built in to the StreamingProcessController,
-    // since we want to trigger the latter first, to ensure that we hit the builtin one first
-    @Test(groups = "python", timeOut = 10000, expectedExceptions=TimeoutException.class)
+    // since we want to trigger the latter first to ensure that we get the timeout execption
+    @Test(groups = "python", timeOut = 30000, expectedExceptions=TimeoutException.class)
     public void testPromptTimeout() throws TimeoutException {
         // start an interactive Python session with unbuffered IO
         final ProcessSettings processSettings = new ProcessSettings(new String[] {"python", "-i", "-u"});

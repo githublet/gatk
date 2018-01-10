@@ -68,7 +68,7 @@ public class StreamingProcessControllerUnitTest extends BaseTest {
         }
     }
 
-    @Test(timeOut = 10000)
+    @Test(timeOut = 50000)
     public void testMultipleParallelStreamingControllers() throws TimeoutException {
         final ProcessSettings catProcessSettings = new ProcessSettings(new String[] {"cat"});
         final StreamingProcessController catController = new StreamingProcessController(catProcessSettings);

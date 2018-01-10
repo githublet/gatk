@@ -50,7 +50,7 @@ public class NeuralNetStreamingExecutor extends VariantWalker {
     private int pythonBatchSize = 256;
 
     @Argument(fullName = "python-sync-frequency", shortName = "psf", doc = "Size of data to queue for Python streaming.", optional = true)
-    private int pythonSyncFrequency = 2048;
+    private int pythonSyncFrequency = 512;
 
     // Create the Python executor. This doesn't actually start the Python process, but verifies that
     // the requestedPython executable exists and can be located.

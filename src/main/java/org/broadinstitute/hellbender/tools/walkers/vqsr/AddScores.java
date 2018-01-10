@@ -13,7 +13,7 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.barclay.help.DocumentedFeature;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
-import org.broadinstitute.hellbender.cmdline.programgroups.VariantProgramGroup;
+import picard.cmdline.programgroups.VariantEvaluationProgramGroup;
 import org.broadinstitute.hellbender.engine.*;
 import org.broadinstitute.hellbender.exceptions.UserException;
 import org.broadinstitute.hellbender.tools.walkers.annotator.AnnotationUtils;
@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
 @CommandLineProgramProperties(
         summary = "Apply a score cutoff to filter variants based on a recalibration table",
         oneLineSummary = " Apply a score cutoff to filter variants based on a recalibration table",
-        programGroup = VariantProgramGroup.class
+        programGroup = VariantEvaluationProgramGroup.class
 )
 @DocumentedFeature
 public class AddScores extends MultiVariantWalker {

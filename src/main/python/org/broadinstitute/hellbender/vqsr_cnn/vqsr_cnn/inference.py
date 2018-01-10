@@ -48,9 +48,9 @@ def score_and_write_batch(model, file_out, fifo, batch_size, python_batch_size):
 
 	for i in range(batch_size):
 		if is_snps[i]:
-			file_out.write(variant_data[i]+score_key+'='+str(snp_scores[i])+genotypes[i]+'\n')
+			file_out.write(variant_data[i]+score_key+'={0:.4f}'.format(snp_scores[i])+genotypes[i]+'\n')
 		else:
-			file_out.write(variant_data[i]+score_key+'='+str(indel_scores[i])+genotypes[i]+'\n')
+			file_out.write(variant_data[i]+score_key+'={0:.4f}'.format(indel_scores[i])+genotypes[i]+'\n')
 
 
 def write_snp_score(model, file_out, fifo_line):

@@ -29,6 +29,7 @@ public class NeuralNetStreamingExecutorIntegrationTest extends CommandLineProgra
                 .addArgument("architecture", architectureHD5)
                 .addArgument(StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE, "false");
 
+        runCommandLine(argsBuilder);
         final IntegrationTestSpec spec = new IntegrationTestSpec(argsBuilder.toString(),
                 Arrays.asList(largeFileTestDir + "VQSR/expected/cnn_1d_chr20_subset_expected.vcf"));
         try {

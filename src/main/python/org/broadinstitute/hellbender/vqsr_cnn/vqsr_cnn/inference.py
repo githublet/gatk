@@ -24,6 +24,19 @@ eps = 1e-7
 
 
 def score_and_write_batch(model, file_out, fifo, batch_size, python_batch_size):
+	'''Score and write a batch of variants with a 1D CNN.
+
+	This function is tightly coupled with the NeuralNetStreamingExecutor
+	It requires data written to the fifo in the order given by transferToPythonViaFifo
+
+	Arguments
+		model: a keras model
+		file_out: The VCF file where variants scores are written
+		fifo: The fifo opened by GATK Streaming executor
+		batch_size: The total number of variants available in the fifo
+		python_batch_size: the number of variants to process in each inference
+
+	'''
 	annotation_batch = []
 	variant_data = []
 	dna_batch = []

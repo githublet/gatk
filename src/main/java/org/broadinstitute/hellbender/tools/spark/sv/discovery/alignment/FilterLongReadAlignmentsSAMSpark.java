@@ -77,11 +77,11 @@ public final class FilterLongReadAlignmentsSAMSpark extends GATKSparkTool {
 
     @Advanced
     @Argument(doc = "Maximum difference between alignment configuration scores for which two configurations will be considered equally likely",
-            shortName = "cst", fullName = "config-score-diff-tolerance", optional = true)
+            fullName = "config-score-diff-tolerance", optional = true)
     public final Double configScoreDiffTolerance = 0.0;
 
     @Argument(doc = "file containing non-canonical contig names (e.g chrUn_KI270588v1) in the reference, human reference assumed when omitted",
-            shortName = "alt-tigs", fullName = "non-canonical-contig-names-file", optional = true)
+            fullName = "non-canonical-contig-names-file", optional = true)
     public String nonCanonicalContigNamesFile;
 
     @Argument(doc = "prefix for output text file for filtered alignment intervals",
@@ -89,7 +89,7 @@ public final class FilterLongReadAlignmentsSAMSpark extends GATKSparkTool {
     private String outputFilePrefix;
 
     @Argument(doc = "whether to run old way of filtering or not",
-            shortName = "OT", fullName = "old-filtering-too", optional = true)
+            fullName = "old-filtering-too", optional = true)
     private boolean runOldFilteringToo = false;
 
     @Override

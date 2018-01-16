@@ -45,7 +45,7 @@ public class BreakpointComplicationsUnitTest extends GATKBaseTest {
     // Tests for CIGAR extraction on tandem duplications
     // -----------------------------------------------------------------------------------------------
     @Test(groups = "sv")
-    public void testExtractCigarForSimleTandup() {
+    public void testExtractCigarForSimpleTandup() {
 
         final int contigTotalLength = 355;
 

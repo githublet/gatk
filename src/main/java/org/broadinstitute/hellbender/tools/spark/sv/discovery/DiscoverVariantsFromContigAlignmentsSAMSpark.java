@@ -96,7 +96,7 @@ public final class DiscoverVariantsFromContigAlignmentsSAMSpark extends GATKSpar
     private final DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection discoverStageArgs =
             new DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection();
 
-    @Argument(doc = "sam file for aligned contigs", shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
+    @Argument(doc = "\"output path for discovery (non-genotyped) VCF", shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
             fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME)
     private String vcfOutputFileName;
 

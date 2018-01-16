@@ -116,6 +116,7 @@ public class ChimericAlignment {
     // =================================================================================================================
     //////////// BELOW ARE CODE PATH USED FOR INSERTION, DELETION, AND DUPLICATION (INV OR NOT) AND INVERSION, AND ARE TESTED ONLY FOR THAT PURPOSE
 
+    // TODO: 1/15/18 to be phased out by InsDelVariantDetector.convertAlignmentIntervalToChimericAlignment()
     /**
      * Parse all alignment records for a single locally-assembled contig and generate chimeric alignments if available.
      * Applies certain filters to skip the input alignment regions that are:
@@ -207,9 +208,9 @@ public class ChimericAlignment {
      * To implement the idea that for two consecutive alignment regions of a contig, the one with higher reference coordinate might be a novel insertion.
      */
     @VisibleForTesting
-    public static boolean nextAlignmentMayBeInsertion(final AlignmentInterval current, final AlignmentInterval next,
-                                                      final Integer mapQThresholdInclusive, final Integer minAlignLength,
-                                                      final boolean filterWhollyContained) {
+    static boolean nextAlignmentMayBeInsertion(final AlignmentInterval current, final AlignmentInterval next,
+                                               final Integer mapQThresholdInclusive, final Integer minAlignLength,
+                                               final boolean filterWhollyContained) {
         // not unique: inserted sequence may have low mapping quality (low reference uniqueness) or may be very small (low read uniqueness)
         final boolean isNotUnique = mapQualTooLow(next, mapQThresholdInclusive) || firstAlignmentIsTooShort(next, current, minAlignLength);
         return isNotUnique
@@ -218,7 +219,7 @@ public class ChimericAlignment {
     }
 
     @VisibleForTesting
-    public static StrandSwitch determineStrandSwitch(final AlignmentInterval first, final AlignmentInterval second) {
+    static StrandSwitch determineStrandSwitch(final AlignmentInterval first, final AlignmentInterval second) {
         if (first.forwardStrand == second.forwardStrand) {
             return StrandSwitch.NO_SWITCH;
         } else {
@@ -282,9 +283,9 @@ public class ChimericAlignment {
      * See {@link #isLikelySimpleTranslocation()} for logic.
      */
     @VisibleForTesting
-    public static boolean isLikelySimpleTranslocation(final AlignmentInterval regionWithLowerCoordOnContig,
-                                                      final AlignmentInterval regionWithHigherCoordOnContig,
-                                                      final StrandSwitch strandSwitch) {
+    static boolean isLikelySimpleTranslocation(final AlignmentInterval regionWithLowerCoordOnContig,
+                                               final AlignmentInterval regionWithHigherCoordOnContig,
+                                               final StrandSwitch strandSwitch) {
 
         if (!regionWithLowerCoordOnContig.referenceSpan.getContig()
                 .equals(regionWithHigherCoordOnContig.referenceSpan.getContig()))
@@ -349,7 +350,7 @@ public class ChimericAlignment {
      *     </li>
      * </ul>
      */
-    public static boolean hasIncompletePictureFromTwoAlignments(final AlignmentInterval one, final AlignmentInterval two) {
+    static boolean hasIncompletePictureFromTwoAlignments(final AlignmentInterval one, final AlignmentInterval two) {
         final SimpleInterval referenceSpanOne = one.referenceSpan;
         final SimpleInterval referenceSpanTwo = two.referenceSpan;
 
@@ -378,7 +379,7 @@ public class ChimericAlignment {
         }
     }
 
-    public boolean isNeitherSimpleTranslocationNorIncompletePicture() {
+    boolean isNeitherSimpleTranslocationNorIncompletePicture() {
         return !isLikelySimpleTranslocation()
                 &&
                 !hasIncompletePictureFromTwoAlignments(regionWithLowerCoordOnContig, regionWithHigherCoordOnContig);
@@ -388,7 +389,7 @@ public class ChimericAlignment {
      * See {@link #isLikelyInvertedDuplication()}
      */
     @VisibleForTesting
-    public static boolean isLikelyInvertedDuplication(final AlignmentInterval one, final AlignmentInterval two) {
+    static boolean isLikelyInvertedDuplication(final AlignmentInterval one, final AlignmentInterval two) {
         if (one.forwardStrand == two.forwardStrand)
             return false;
         return 2 * AlignmentInterval.overlapOnRefSpan(one, two) >

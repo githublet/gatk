@@ -45,7 +45,7 @@ import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDi
 import static org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.AssemblyContigAlignmentSignatureClassifier.RawTypes;
 
 /**
- * (Internal) Examines aligned contigs from local assemblies and calls complex structural variants
+ * (Internal) Examines aligned contigs from local assemblies and calls structural variants or their breakpoints
  *
  * <p>This tool is used in development and should not be of interest to most researchers.  It is a prototype of
  * complex structural variant calling, and has been superseded by other tools.</p>
@@ -79,14 +79,16 @@ import static org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.A
 @DocumentedFeature
 @BetaFeature
 @CommandLineProgramProperties(
-        oneLineSummary = "(Internal) Examines aligned contigs from local assemblies and calls complex structural variants",
+        oneLineSummary = "(Internal) Examines aligned contigs from local assemblies and calls structural variants or their breakpoints",
         summary =
-        "This tool is used in development and should not be of interest to most researchers.  It is a prototype of" +
-        " complex structural variant calling, and has been superseded by other tools." +
-        " This tool takes a file containing the alignments of assembled contigs and searches for reads with" +
-        " split alignments indicating the presence of structural variation breakpoints. The alignment signatures of the" +
-        " split alignments are analyzed to determine the type of structural variation and written to a VCF file." +
-        " The input file is typically the output file produced by FindBreakpointEvidenceSpark.",
+        "This tool is used in development and should not be of interest to most researchers. It is a prototype of" +
+        " structural variant calling, and has been under active developments. For more stable version," +
+        " please see DiscoverVariantsFromContigAlignmentsSAMSpark." +
+        " This tool takes a file containing the alignments of assembled contigs" +
+        " (typically the output file produced by FindBreakpointEvidenceSpark) and searches for reads with" +
+        " split alignments or large gaps indicating the presence of structural variation breakpoints." +
+        " Variations' types are determined by analyzing the signatures of the split alignments," +
+        " and are written to VCF files in the designated output directory.",
         programGroup = StructuralVariantDiscoveryProgramGroup.class)
 public final class SvDiscoverFromLocalAssemblyContigAlignmentsSpark extends GATKSparkTool {
     private static final long serialVersionUID = 1L;

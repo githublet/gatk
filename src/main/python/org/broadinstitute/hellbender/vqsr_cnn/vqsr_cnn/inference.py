@@ -7,6 +7,7 @@ import numpy as np
 from collections import Counter, defaultdict
 
 # Keras Imports
+import keras.backend as K
 from keras.models import load_model
 
 dna_symbols = {'A':0, 'C':1, 'G':2, 'T':3}
@@ -26,7 +27,7 @@ eps = 1e-7
 def score_and_write_batch(model, file_out, fifo, batch_size, python_batch_size):
 	'''Score and write a batch of variants with a 1D CNN.
 
-	This function is tightly coupled with the NeuralNetStreamingExecutor
+	This function is tightly coupled with the NeuralNetInference
 	It requires data written to the fifo in the order given by transferToPythonViaFifo
 
 	Arguments
@@ -61,9 +62,9 @@ def score_and_write_batch(model, file_out, fifo, batch_size, python_batch_size):
 
 	for i in range(batch_size):
 		if is_snps[i]:
-			file_out.write(variant_data[i]+score_key+'={0:.4f}'.format(snp_scores[i])+genotypes[i]+'\n')
+			file_out.write(variant_data[i]+score_key+'={0:.3f}'.format(snp_scores[i])+genotypes[i]+'\n')
 		else:
-			file_out.write(variant_data[i]+score_key+'={0:.4f}'.format(indel_scores[i])+genotypes[i]+'\n')
+			file_out.write(variant_data[i]+score_key+'={0:.3f}'.format(indel_scores[i])+genotypes[i]+'\n')
 
 
 def write_snp_score(model, file_out, fifo_line):
@@ -217,3 +218,72 @@ def interval_file_to_dict(interval_file, shift1=0, skip=['@']):
 
 	return intervals
 
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~ Metrics ~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def precision(y_true, y_pred):
+	'''Calculates the precision, a metric for multi-label classification of
+	how many selected items are relevant.
+	'''
+	true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+	predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+	precision = true_positives / (predicted_positives + K.epsilon())
+	return precision
+
+
+def recall(y_true, y_pred):
+	'''Calculates the recall, a metric for multi-label classification of
+	how many relevant items are selected.
+	'''
+	true_positives = K.sum(K.round(K.clip(y_true*y_pred, 0, 1)))
+	possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+	recall = true_positives / (possible_positives + K.epsilon())
+	return recall
+
+
+def per_class_recall(labels):
+	recall_fxns = []
+
+	for label_key in labels:
+		label_idx = labels[label_key]
+		string_fxn = 'def '+ label_key + '_recall(y_true, y_pred):\n'
+		string_fxn += '\ttrue_positives = K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0)\n'
+		string_fxn += '\tpossible_positives = K.sum(K.round(K.clip(y_true, 0, 1)), axis=0)\n'
+		string_fxn += '\treturn true_positives['+str(label_idx)+'] / (possible_positives['+str(label_idx)+'] + K.epsilon())\n'
+
+		exec(string_fxn)
+		recall_fxn = eval(label_key + '_recall')
+		recall_fxns.append(recall_fxn)
+
+	return recall_fxns
+
+
+def per_class_precision(labels):
+	precision_fxns = []
+
+	for label_key in labels:
+		label_idx = labels[label_key]
+		string_fxn = 'def '+ label_key + '_precision(y_true, y_pred):\n'
+		string_fxn += '\ttrue_positives = K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0)\n'
+		string_fxn += '\tpredicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)), axis=0)\n'
+		string_fxn += '\treturn true_positives['+str(label_idx)+'] / (predicted_positives['+str(label_idx)+'] + K.epsilon())\n'
+
+		exec(string_fxn)
+		precision_fxn = eval(label_key + '_precision')
+		precision_fxns.append(precision_fxn)
+
+	return precision_fxns
+
+
+def get_metric_dict(labels=snp_indel_labels):
+	metrics = {'precision':precision, 'recall':recall}
+	precision_fxns = per_class_precision(labels)
+	recall_fxns = per_class_recall(labels)
+	for i,label_key in enumerate(labels.keys()):
+		metrics[label_key+'_precision'] = precision_fxns[i]
+		metrics[label_key+'_recall'] = recall_fxns[i]
+
+	return metrics

@@ -92,7 +92,7 @@ public final class BreakpointComplications {
             }
 
             if (getDupSeqStrandOnCtg() != null) {
-                attributeMap.put(GATKSVVCFConstants.DUP_INV_ORIENTATIONS,
+                attributeMap.put(GATKSVVCFConstants.DUP_ORIENTATIONS,
                         getDupSeqStrandOnCtg().stream().map(Strand::toString).collect(Collectors.joining()));
             }
         }

@@ -98,7 +98,7 @@ public final class GATKSVVCFHeaderLines {
         addInfoLine(new VCFInfoHeaderLine(GATKSVVCFConstants.READ_PAIR_SUPPORT, 1, VCFHeaderLineType.Integer, "Number of discordant read pairs supporting the variant"));
         addInfoLine(new VCFInfoHeaderLine(GATKSVVCFConstants.SPLIT_READ_SUPPORT, 1, VCFHeaderLineType.Integer, "Number of split read supplementary mappings supporting the variant"));
 
-        addInfoLine(new VCFInfoHeaderLine(GATKSVVCFConstants.DUP_INV_ORIENTATIONS, VCFHeaderLineCount.A, VCFHeaderLineType.String,
+        addInfoLine(new VCFInfoHeaderLine(GATKSVVCFConstants.DUP_ORIENTATIONS, VCFHeaderLineCount.A, VCFHeaderLineType.String,
                 "OrientationsS of the duplicated sequence on alt allele relative to the copy on ref; one group for each alt allele (currently only available for inverted duplication variants)"));
 
         addInfoLine(new VCFInfoHeaderLine(GATKSVVCFConstants.DUP_TAN_CONTRACTION_STRING, 0, VCFHeaderLineType.Flag, "Tandem repeats contraction compared to reference"));

@@ -1,6 +1,7 @@
 package org.broadinstitute.hellbender.tools.walkers.vqsr;
 
 import htsjdk.variant.variantcontext.VariantContext;
+import htsjdk.variant.variantcontext.VariantContextBuilder;
 import htsjdk.variant.variantcontext.writer.VariantContextWriter;
 import htsjdk.variant.vcf.VCFHeader;
 import htsjdk.variant.vcf.VCFHeaderLine;
@@ -8,6 +9,7 @@ import htsjdk.variant.vcf.VCFHeaderLine;
 import org.broadinstitute.barclay.argparser.*;
 import org.broadinstitute.hellbender.cmdline.StandardArgumentDefinitions;
 import org.broadinstitute.hellbender.engine.*;
+import org.broadinstitute.hellbender.engine.filters.VariantFilter;
 import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.utils.python.StreamingPythonScriptExecutor;
 import org.broadinstitute.hellbender.utils.runtime.AsynchronousStreamWriterService;
@@ -18,6 +20,7 @@ import picard.cmdline.programgroups.VariantEvaluationProgramGroup;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.StreamSupport;
 
 /**
  * Annotate a VCF with scores from 1D Convolutional Neural Network.
@@ -38,7 +41,6 @@ import java.util.concurrent.TimeUnit;
  *   --architecture src/main/resources/org/broadinstitute/hellbender/tools/walkers/vqsr/cnn_1d_annotations.hd5
  * </pre>
  *
- * Created by Sam Friedman on 11/17/17.
  */
 @ExperimentalFeature
 @CommandLineProgramProperties(
@@ -56,7 +58,7 @@ public class NeuralNetInference extends VariantWalker {
     @Argument(fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME,
             shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME,
             doc = "Output file")
-    private File outputFile = null; // output file produced by Python code
+    private String outputFile = null; // output file produced by Python code
 
     @Argument(fullName = "architecture", shortName = "a", doc = "Neural Net architecture and weights hd5 file", optional = false)
     private String architecture = null;
@@ -93,6 +95,7 @@ public class NeuralNetInference extends VariantWalker {
     private int windowEnd = windowSize/2;
     private int windowStart = (windowSize/2)-1;
     private boolean waitforBatchCompletion = false;
+    private String scoreFile;
 
     @Override
     protected String[] customCommandLineValidation(){
@@ -123,10 +126,8 @@ public class NeuralNetInference extends VariantWalker {
         }
         hInfo.addAll(getDefaultToolVCFHeaderLines());
         final VCFHeader vcfHeader = new VCFHeader(hInfo, samples);
-
-        vcfWriter = createVCFWriter(outputFile);
+        vcfWriter = createVCFWriter(new File(outputFile));
         vcfWriter.writeHeader(vcfHeader);
-        vcfWriter.close();
 
         // Start the Python process, and get a FIFO from the executor to use to send data to Python. The lifetime
         // of the FIFO is managed by the executor; the FIFO will be destroyed when the executor is destroyed.
@@ -150,7 +151,8 @@ public class NeuralNetInference extends VariantWalker {
 
         // Also, ask Python to open our output file, where it will write the contents of everything it reads
         // from the FIFO. <code sendSynchronousCommand/>
-        pythonExecutor.sendSynchronousCommand(String.format("tempFile = open('%s', 'a')" + NL, outputFile.getAbsolutePath()));
+        scoreFile = outputFile + ".temp";
+        pythonExecutor.sendSynchronousCommand(String.format("tempFile = open('%s', 'w+')" + NL, scoreFile));
         pythonExecutor.sendSynchronousCommand("from keras.models import load_model" + NL);
         pythonExecutor.sendSynchronousCommand("import vqsr_cnn" + NL);
         pythonExecutor.sendSynchronousCommand(String.format("model = load_model('%s', custom_objects=vqsr_cnn.get_metric_dict())", architecture) + NL);
@@ -164,51 +166,40 @@ public class NeuralNetInference extends VariantWalker {
     }
 
     private void transferToPythonViaFifo(final VariantContext variant, final ReferenceContext referenceContext) {
-        if (variant.isSNP() || variant.isIndel()) {
-            try {
+        try {
+            final String outDat = String.format("%s\t%s\t%s\t%s\n",
+                    getVariantDataString(variant),
+                    new String(Arrays.copyOfRange(referenceContext.getBases(), 0, windowSize), "UTF-8"),
+                    getVariantInfoString(variant),
+                    variant.isSNP() ? "SNP" : variant.isIndel() ? "INDEL" : "OTHER");
 
-                final String outDat = String.format("%s|%s|%s|%s|%s|%s|\n",
-                        new String(Arrays.copyOfRange(referenceContext.getBases(), 0, windowSize), "UTF-8"),
-                        getVariantInfoString(variant),
-                        getVariantDataString(variant, referenceContext),
-                        GATKVCFConstants.CNN_1D_KEY,
-                        noSamples ? "" : "\t.",
-                        variant.isSNP() ? "1" : "0");
-
-                if (curBatchSize == transferBatchSize) {
-                    if (waitforBatchCompletion == true) {
-                        // wait for the last batch to complete before we start a new one
-                        asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
-                        waitforBatchCompletion = false;
-                        pythonExecutor.getAccumulatedOutput();
-                    }
-                    executePythonCommand();
-                    waitforBatchCompletion = true;
-                    curBatchSize = 0;
-                    batchList = new ArrayList<>(transferBatchSize);
+            if (curBatchSize == transferBatchSize) {
+                if (waitforBatchCompletion == true) {
+                    // wait for the last batch to complete before we start a new one
+                    asyncWriter.waitForPreviousBatchCompletion(1, TimeUnit.MINUTES);
+                    waitforBatchCompletion = false;
+                    pythonExecutor.getAccumulatedOutput();
                 }
-
-                // write summary data to the FIFO
-                batchList.add(outDat);
-                curBatchSize++;
-            } catch (UnsupportedEncodingException e) {
-                throw new GATKException("Trying to make string from reference, but unsupported encoding UTF-8.", e);
+                executePythonCommand();
+                waitforBatchCompletion = true;
+                curBatchSize = 0;
+                batchList = new ArrayList<>(transferBatchSize);
             }
+
+            batchList.add(outDat);
+            curBatchSize++;
+        } catch (UnsupportedEncodingException e) {
+            throw new GATKException("Trying to make string from reference, but unsupported encoding UTF-8.", e);
         }
+
     }
 
-    private String getVariantDataString(final VariantContext variant, final ReferenceContext referenceContext){
-        String varInfo = keepInfo ? getVariantInfoString(variant) : "" ;
-        String alts = variant.getAlternateAlleles().toString().replace(" ", "");
-        alts = alts.substring(1, alts.length() - 1);
-
-        String varData = String.format("%s\t%d\t.\t%s\t%s\t%.2f\t.\t%s",
+    private String getVariantDataString(final VariantContext variant){
+        String varData = String.format("%s\t%d\t%s\t%s",
                 variant.getContig(),
                 variant.getStart(),
                 variant.getReference().getBaseString(),
-                alts,
-                variant.getPhredScaledQual(),
-                varInfo
+                variant.getAlternateAlleles().toString()
         );
 
         return varData;
@@ -238,6 +229,8 @@ public class NeuralNetInference extends VariantWalker {
         pythonExecutor.sendSynchronousCommand("fifoFile.close()" + NL);
         pythonExecutor.terminate();
 
+        addScoresToVCF();
+
         return true;
     }
 
@@ -246,6 +239,40 @@ public class NeuralNetInference extends VariantWalker {
                 "vqsr_cnn.score_and_write_batch(model, tempFile, fifoFile, %d, %d)", curBatchSize, inferenceBatchSize) + NL;
         pythonExecutor.sendAsynchronousCommand(pythonCommand);
         asyncWriter.startAsynchronousBatchWrite(batchList);
+    }
+
+
+    private void addScoresToVCF(){
+        try {
+            Scanner scoreScan = new Scanner(new File(scoreFile));
+            scoreScan.useDelimiter("\\n");
+            final VariantFilter variantfilter = makeVariantFilter();
+
+            // Annotate each variant in the input stream, as in variantWalkerBase.traverse()
+            StreamSupport.stream(getSpliteratorForDrivingVariants(), false)
+                    .filter(variantfilter)
+                    .forEach(variant -> {
+                        String sv = scoreScan.nextLine();
+                        String[] scoredVariant = sv.split("\\t");
+                        if(variant.getContig().equals(scoredVariant[0])
+                                && Integer.toString(variant.getStart()).equals(scoredVariant[1])
+                                && variant.getReference().getBaseString().equals(scoredVariant[2])
+                                && variant.getAlternateAlleles().toString().equals(scoredVariant[3])) {
+                            final VariantContextBuilder builder = new VariantContextBuilder(variant);
+                            builder.attribute(GATKVCFConstants.CNN_1D_KEY, scoredVariant[4]);
+                            vcfWriter.add(builder.make());
+                        } else {
+                            String errorMsg = "Score file out of sync with original VCF. Score file has:"+sv;
+                            errorMsg += "\n But VCF has:" + variant.toStringWithoutGenotypes();
+                            throw new GATKException(errorMsg);
+                        }
+                    });
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        vcfWriter.close();
+
     }
 
 }

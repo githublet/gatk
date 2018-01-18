@@ -36,6 +36,20 @@ public class NeuralNetInferenceIntegrationTest extends CommandLineProgramTest {
 
     }
 
+//    @Test(groups = {"python"})
+//    public void generateTestExample() throws IOException{
+//        final String inputVCF = largeFileTestDir + "VQSR/recalibrated_chr20_start.vcf";
+//        final ArgumentsBuilder argsBuilder = new ArgumentsBuilder();
+//        argsBuilder.addArgument(StandardArgumentDefinitions.VARIANT_LONG_NAME, inputVCF)
+//                .addArgument(StandardArgumentDefinitions.OUTPUT_LONG_NAME, "cnn_1d_chr20_subset_expected.vcf")
+//                .addArgument(StandardArgumentDefinitions.REFERENCE_LONG_NAME, b37_reference_20_21)
+//                .addArgument("architecture", architectureHD5)
+//                .addArgument(StandardArgumentDefinitions.ADD_OUTPUT_VCF_COMMANDLINE, "false");
+//
+//        runCommandLine(argsBuilder);
+//
+//    }
+
 
     @Test(groups = {"python"})
     public void testSmallBatchInference()throws IOException {

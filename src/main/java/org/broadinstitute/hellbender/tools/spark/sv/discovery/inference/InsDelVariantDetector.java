@@ -125,8 +125,8 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
 
         narlsAndSources.cache();
 
-        SvDiscoveryUtils.evaluateIntervalsAndNarls(assembledIntervals, narlsAndSources, referenceSequenceDictionaryBroadcast,
-                discoverStageArgs, toolLogger);
+        SvDiscoveryUtils.evaluateIntervalsAndNarls(assembledIntervals, narlsAndSources.map(Tuple2::_1).collect(),
+                referenceSequenceDictionaryBroadcast.getValue(), discoverStageArgs, toolLogger);
 
         List<VariantContext> annotatedVariants =
                 narlsAndSources

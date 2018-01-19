@@ -8,7 +8,7 @@ import htsjdk.samtools.SAMRecord;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.TextCigarCodec;
 import org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection;
-import org.broadinstitute.hellbender.tools.spark.sv.discovery.SVDiscoveryTestDataProvider;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.SimpleSVDiscoveryTestDataProvider;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignmentInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.ContigAlignmentsModifier;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.StrandSwitch;
@@ -27,15 +27,15 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection.DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection.CHIMERIC_ALIGNMENTS_HIGHMQ_THRESHOLD;
-import static org.broadinstitute.hellbender.tools.spark.sv.discovery.SVDiscoveryTestDataProvider.*;
+import static org.broadinstitute.hellbender.tools.spark.sv.discovery.SimpleSVDiscoveryTestDataProvider.*;
 
 public class ChimericAlignmentUnitTest extends GATKBaseTest {
 
     @Test(groups = "sv")
     public void testFilterByRegionTooSmall() {
-        final byte[] contigSequence = SVDiscoveryTestDataProvider.LONG_CONTIG1.getBytes();
-        final AlignmentInterval region1 = new AlignmentInterval(new SimpleInterval(SVDiscoveryTestDataProvider.chrForLongContig1, 20138007, 20142231), 1, contigSequence.length - 1986, TextCigarCodec.decode("1986S236M2D1572M1I798M5D730M1I347M4I535M"), false, 60, 36, 100, ContigAlignmentsModifier.AlnModType.NONE);
-        final AlignmentInterval region2 = new AlignmentInterval(new SimpleInterval(SVDiscoveryTestDataProvider.chrForLongContig1, 20152030, 20154634), 3604, contigSequence.length, TextCigarCodec.decode("3603H24M1I611M1I1970M"), true, 60, 36, 100, ContigAlignmentsModifier.AlnModType.NONE);
+        final byte[] contigSequence = SimpleSVDiscoveryTestDataProvider.LONG_CONTIG1.getBytes();
+        final AlignmentInterval region1 = new AlignmentInterval(new SimpleInterval(SimpleSVDiscoveryTestDataProvider.chrForLongContig1, 20138007, 20142231), 1, contigSequence.length - 1986, TextCigarCodec.decode("1986S236M2D1572M1I798M5D730M1I347M4I535M"), false, 60, 36, 100, ContigAlignmentsModifier.AlnModType.NONE);
+        final AlignmentInterval region2 = new AlignmentInterval(new SimpleInterval(SimpleSVDiscoveryTestDataProvider.chrForLongContig1, 20152030, 20154634), 3604, contigSequence.length, TextCigarCodec.decode("3603H24M1I611M1I1970M"), true, 60, 36, 100, ContigAlignmentsModifier.AlnModType.NONE);
 
         Assert.assertFalse( ChimericAlignment.firstAlignmentIsTooShort(region1, region2, StructuralVariationDiscoveryArgumentCollection.DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection.DEFAULT_MIN_ALIGNMENT_LENGTH) );
         Assert.assertFalse( ChimericAlignment.firstAlignmentIsTooShort(region2, region1, StructuralVariationDiscoveryArgumentCollection.DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection.DEFAULT_MIN_ALIGNMENT_LENGTH) );
@@ -73,85 +73,85 @@ public class ChimericAlignmentUnitTest extends GATKBaseTest {
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.REVERSE_TO_FORWARD, false, false, false, false, false});
 
         // simple deletion
-        testData = SVDiscoveryTestDataProvider.forSimpleDeletion_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleDeletion_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forSimpleDeletion_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleDeletion_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         // simple insertion
-        testData = SVDiscoveryTestDataProvider.forSimpleInsertion_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleInsertion_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forSimpleInsertion_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleInsertion_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         // long range substitution
-        testData = SVDiscoveryTestDataProvider.forLongRangeSubstitution_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forLongRangeSubstitution_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forLongRangeSubstitution_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forLongRangeSubstitution_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         // simple deletion with homology
-        testData = SVDiscoveryTestDataProvider.forDeletionWithHomology_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forDeletionWithHomology_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forDeletionWithHomology_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forDeletionWithHomology_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         // tandem duplication simple contraction
-        testData = SVDiscoveryTestDataProvider.forSimpleTanDupContraction_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleTanDupContraction_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forSimpleTanDupContraction_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleTanDupContraction_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         // tandem duplication simple expansion
-        testData = SVDiscoveryTestDataProvider.forSimpleTanDupExpansion_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleTanDupExpansion_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forSimpleTanDupExpansion_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleTanDupExpansion_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         // tandem duplication simple expansion with novel insertion
-        testData = SVDiscoveryTestDataProvider.forSimpleTanDupExpansionWithNovelIns_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleTanDupExpansionWithNovelIns_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forSimpleTanDupExpansionWithNovelIns_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forSimpleTanDupExpansionWithNovelIns_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
 
 
         // first test (the original observed event, but assigned to a different chromosome): expansion from 1 unit to 2 units with pseudo-homology
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_1to2_pseudoHom_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_1to2_pseudoHom_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_1to2_pseudoHom_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_1to2_pseudoHom_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
 
         // second test: contraction from 2 units to 1 unit with pseudo-homology
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_2to1_pseudoHom_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_2to1_pseudoHom_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_2to1_pseudoHom_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_2to1_pseudoHom_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
 
         // third test: contraction from 3 units to 2 units without pseudo-homology
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_3to2_noPseudoHom_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_3to2_noPseudoHom_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_3to2_noPseudoHom_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_3to2_noPseudoHom_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
 
         // fourth test: expansion from 2 units to 3 units without pseudo-homology
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_2to3_noPseudoHom_plus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_2to3_noPseudoHom_plus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, true, false, false, false, false});
 
-        testData = SVDiscoveryTestDataProvider.forComplexTanDup_2to3_noPseudoHom_minus;
+        testData = SimpleSVDiscoveryTestDataProvider.forComplexTanDup_2to3_noPseudoHom_minus;
         data.add(new Object[]{testData._1(), testData._2(), StrandSwitch.NO_SWITCH, false, false, false, false, false});
 
         ////////// ABOVE ARE FOR SIMPLE VARIANTS: INS/DEL, DUP EXPANSION, DUP CONTRACTION, INVERSION, BELOW ARE FOR TRANSLOCATION SUSPECTS AND INV DUP
@@ -221,7 +221,7 @@ public class ChimericAlignmentUnitTest extends GATKBaseTest {
                      final boolean expectedIsIncompletePicture,
                      final boolean shouldUseRefVersion_b38) {
 
-        final SAMSequenceDictionary refDict = shouldUseRefVersion_b38 ? SVDiscoveryTestDataProvider.b38_seqDict : SVDiscoveryTestDataProvider.seqDict;
+        final SAMSequenceDictionary refDict = shouldUseRefVersion_b38 ? SimpleSVDiscoveryTestDataProvider.b38_seqDict : SimpleSVDiscoveryTestDataProvider.seqDict;
 
         Assert.assertEquals(ChimericAlignment.determineStrandSwitch(region1, region2), expectedStrandSwitch);
         Assert.assertEquals(ChimericAlignment.isForwardStrandRepresentation(region1, region2, expectedStrandSwitch, refDict), expectedIsForwardStrandRepresentation);

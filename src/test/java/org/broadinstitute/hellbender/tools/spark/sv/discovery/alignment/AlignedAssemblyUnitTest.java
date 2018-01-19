@@ -6,7 +6,7 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import htsjdk.samtools.Cigar;
 import htsjdk.samtools.TextCigarCodec;
-import org.broadinstitute.hellbender.tools.spark.sv.discovery.SVDiscoveryTestDataProvider;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.SimpleSVDiscoveryTestDataProvider;
 import org.broadinstitute.hellbender.tools.spark.sv.evidence.AlignedAssemblyOrExcuse;
 import org.broadinstitute.hellbender.utils.SimpleInterval;
 import org.broadinstitute.hellbender.utils.read.CigarUtils;
@@ -48,12 +48,12 @@ public class AlignedAssemblyUnitTest extends GATKBaseTest {
         final Cigar[] cigars = Arrays.stream(cigarStrings).map(TextCigarCodec::decode).toArray(Cigar[]::new);
 
         // these sequence are technically wrong the for the inversion event, but the test purpose is for serialization so it is irrelevant
-        final byte[] dummySequenceForContigOne = SVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'A');
+        final byte[] dummySequenceForContigOne = SimpleSVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'A');
 
-        final byte[] dummySequenceForContigTwo = SVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'T');
-        final byte[] dummySequenceForContigThree = SVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'C');
+        final byte[] dummySequenceForContigTwo = SimpleSVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'T');
+        final byte[] dummySequenceForContigThree = SimpleSVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'C');
 
-        final byte[] dummySequenceForContigFour = SVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'G');
+        final byte[] dummySequenceForContigFour = SimpleSVDiscoveryTestDataProvider.makeDummySequence(seqLen[0], (byte)'G');
 
 
         final List<AlignedContig> allContigs = new ArrayList<>();

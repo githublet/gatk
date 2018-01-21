@@ -23,9 +23,10 @@ import scala.Tuple3;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
-
+// TODO: 1/21/18 all methods, except inferInvDupRange(), in this class will do nothing more than what new centralized class SimpleNovelAdjacencyInterpreter, hence will be removed
 public final class SimpleStrandSwitchVariantDetector implements VariantDetectorFromLocalAssemblyContigAlignments {
 
 
@@ -89,6 +90,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
                 contigWith2AIMappedToSameChrAndStrandSwitch.contigName, referenceDictionary.getValue()), contigWith2AIMappedToSameChrAndStrandSwitch.contigSequence);
     }
 
+    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
     /**
      * Roughly similar to {@link ChimericAlignment#nextAlignmentMayBeInsertion(AlignmentInterval, AlignmentInterval, Integer, Integer, boolean)}:
      *  1) either alignment may have very low mapping quality (a more relaxed mapping quality threshold);
@@ -113,6 +115,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
 
     // =================================================================================================================
 
+    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
     // workflow manager for simple strand-switch alignment contigs
     private JavaRDD<VariantContext> dealWithSimpleStrandSwitchBkpts(final JavaRDD<AlignedContig> contigs,
                                                                     final Broadcast<ReferenceMultiSource> broadcastReference,
@@ -144,6 +147,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
                                         sampleId).iterator());
     }
 
+    // TODO: 1/21/18 new centralized class SimpleNovelAdjacencyInterpreter just need to implement the correct logic to trigger calling the following logic
     private static Tuple2<NovelAdjacencyReferenceLocations, Tuple2<Tuple2<BreakEndVariantType, BreakEndVariantType>, Iterable<ChimericAlignment>>>
     inferBNDType(final Tuple2<NovelAdjacencyReferenceLocations, Iterable<ChimericAlignment>> noveltyAndEvidence,
                  final ReferenceMultiSource reference) {
@@ -156,6 +160,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
 
     // =================================================================================================================
 
+    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
     private JavaRDD<VariantContext> dealWithSuspectedInvDup(final JavaRDD<AlignedContig> contigs,
                                                             final Broadcast<ReferenceMultiSource> broadcastReference,
                                                             final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
@@ -175,29 +180,50 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
                 .mapToPair(pair -> new Tuple2<>(new NovelAdjacencyReferenceLocations(pair._1, pair._2, broadcastSequenceDictionary.getValue()), new Tuple2<>(pair._1, pair._2)))
                 .groupByKey()
                 .flatMapToPair(SimpleStrandSwitchVariantDetector::inferInvDupRange)
-                .map(noveltyTypeAndAltSeqAndEvidence ->
-                        InsDelVariantDetector
-                                .annotateVariant(noveltyTypeAndAltSeqAndEvidence._1._1(),
-                                        noveltyTypeAndAltSeqAndEvidence._1._2(),
-                                        noveltyTypeAndAltSeqAndEvidence._1._3(),
-                                        noveltyTypeAndAltSeqAndEvidence._2,
-                                        broadcastReference,
-                                        broadcastSequenceDictionary,
-                                        null,
-                                        sampleId));
+                .map(noveltyTypeAndAltSeqAndEvidence -> {
+                            final NovelAdjacencyReferenceLocations novelAdjacency = noveltyTypeAndAltSeqAndEvidence._1._1();
+                            final SimpleSVType.DuplicationInverted invDup = noveltyTypeAndAltSeqAndEvidence._1._2();
+                            final byte[] altHaplotypeSeq = noveltyTypeAndAltSeqAndEvidence._1._3();
+
+                            final List<ChimericAlignment> evidence = noveltyTypeAndAltSeqAndEvidence._2;
+                            return AnnotatedVariantProducer
+                                    .produceAnnotatedVcFromInferredTypeAndRefLocations(
+                                            novelAdjacency.leftJustifiedLeftRefLoc,
+                                            novelAdjacency.leftJustifiedRightRefLoc.getStart(),
+                                            novelAdjacency.complication,
+                                            invDup,
+                                            altHaplotypeSeq,
+                                            evidence,
+                                            broadcastReference,
+                                            broadcastSequenceDictionary,
+                                            null,
+                                            sampleId);
+
+                });
     }
 
+    // TODO: 1/21/18 the only method that needs to be moved into the new centralized class
     private static Iterator<Tuple2<Tuple3<NovelAdjacencyReferenceLocations, SimpleSVType.DuplicationInverted, byte[]>, List<ChimericAlignment>>>
     inferInvDupRange(final Tuple2<NovelAdjacencyReferenceLocations, Iterable<Tuple2<ChimericAlignment, byte[]>>> noveltyAndEvidence) {
 
         final NovelAdjacencyReferenceLocations novelAdjacency = noveltyAndEvidence._1;
         final SimpleSVType.DuplicationInverted duplicationInverted = new SimpleSVType.DuplicationInverted(novelAdjacency);
 
-        final Map<byte[], List<ChimericAlignment>> collect = Utils.stream(noveltyAndEvidence._2)
-                .collect(Collectors.groupingBy(caAndSeq -> novelAdjacency.complication.extractAltHaplotypeForInvDup(caAndSeq._1, caAndSeq._2),
-                        Collectors.mapping(caAndSeq -> caAndSeq._1, Collectors.toList())));
+        // doing this because the same novel adjacency reference locations might be induced by different (probably only slightly) alt haplotypes, so a single group by NARL is not enough
+        final Iterable<Tuple2<ChimericAlignment, byte[]>> chimeraAndContigSeq = noveltyAndEvidence._2;
+        final Set<Map.Entry<byte[], List<ChimericAlignment>>> alignmentEvidenceGroupedByAltHaplotypeSequence =
+                Utils.stream(chimeraAndContigSeq)
+                        .collect(
+                                Collectors.groupingBy(caAndSeq ->
+                                                novelAdjacency.complication.extractAltHaplotypeForInvDup(caAndSeq._1, caAndSeq._2),
+                                        Collectors.mapping(caAndSeq -> caAndSeq._1, Collectors.toList())
+                                )
+                        )
+                        .entrySet();
 
-        return collect.entrySet().stream().map(entry -> new Tuple2<>(new Tuple3<>(novelAdjacency, duplicationInverted, entry.getKey()),
-                entry.getValue())).iterator();
+        return alignmentEvidenceGroupedByAltHaplotypeSequence.stream()
+                .map(entry -> new Tuple2<>(new Tuple3<>(novelAdjacency, duplicationInverted, entry.getKey()),
+                        entry.getValue()))
+                .iterator();
     }
 }

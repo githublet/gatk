@@ -15,6 +15,7 @@ import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.Assembly
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVVCFWriter;
 import scala.Tuple2;
 
+// TODO: 1/21/18 this class will do nothing more than what new centralized class SimpleNovelAdjacencyInterpreter, hence will be removed
 public final class SuspectedTransLocDetector implements VariantDetectorFromLocalAssemblyContigAlignments {
 
 
@@ -37,7 +38,7 @@ public final class SuspectedTransLocDetector implements VariantDetectorFromLocal
                                 SimpleStrandSwitchVariantDetector.splitPairStrongEnoughEvidenceForCA(
                                                 decoratedTig.getSourceContig().alignmentIntervals.get(0), decoratedTig.getSourceContig().alignmentIntervals.get(1),
                                         SimpleStrandSwitchVariantDetector.MORE_RELAXED_ALIGNMENT_MIN_MQ,
-                                        0))
+                                        SimpleStrandSwitchVariantDetector.MORE_RELAXED_ALIGNMENT_MIN_LENGTH))
                         .mapToPair(decoratedTig ->
                                 convertAlignmentIntervalsToChimericAlignment(decoratedTig.getSourceContig(),
                                         referenceSequenceDictionaryBroadcast.getValue())).cache();
@@ -67,6 +68,7 @@ public final class SuspectedTransLocDetector implements VariantDetectorFromLocal
                 EMPTY_INSERTION_MAPPINGS, contig.contigName, referenceDictionary), contig.contigSequence);
     }
 
+    // TODO: 1/21/18 new centralized class SimpleNovelAdjacencyInterpreter just need to implement the correct logic to trigger calling the following logic
     private static Tuple2<NovelAdjacencyReferenceLocations, Tuple2<Tuple2<BreakEndVariantType, BreakEndVariantType>, Iterable<ChimericAlignment>>>
     inferBNDType(final Tuple2<NovelAdjacencyReferenceLocations, Iterable<ChimericAlignment>> noveltyAndEvidence,
                  final ReferenceMultiSource reference, final SAMSequenceDictionary referenceDictionary) {

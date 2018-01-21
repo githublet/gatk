@@ -10,7 +10,10 @@ import org.apache.spark.broadcast.Broadcast;
 import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
 import org.broadinstitute.hellbender.exceptions.GATKException;
 import org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection;
-import org.broadinstitute.hellbender.tools.spark.sv.discovery.*;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.AnnotatedVariantProducer;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.SimpleSVType;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.SvDiscoveryInputData;
+import org.broadinstitute.hellbender.tools.spark.sv.discovery.SvDiscoveryUtils;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignedContig;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignmentInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AssemblyContigWithFineTunedAlignments;
@@ -18,20 +21,19 @@ import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.StrandSw
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVIntervalTree;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVVCFWriter;
-import org.broadinstitute.hellbender.utils.Utils;
 import scala.Tuple2;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Stream;
 
 
 public final class InsDelVariantDetector implements VariantDetectorFromLocalAssemblyContigAlignments {
 
     @Override
     public void inferSvAndWriteVCF(final JavaRDD<AssemblyContigWithFineTunedAlignments> assemblyContigs,
-                                   final SvDiscoveryInputData svDiscoveryInputData){
+                                   final SvDiscoveryInputData svDiscoveryInputData) {
 
         final Broadcast<SAMSequenceDictionary> referenceSequenceDictionaryBroadcast = svDiscoveryInputData.referenceSequenceDictionaryBroadcast;
         final String outputPath = svDiscoveryInputData.outputPath;
@@ -54,6 +56,7 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
                 referenceSequenceDictionaryBroadcast.getValue(), toolLogger);
     }
 
+    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
     /**
      * Very similar to {@link ChimericAlignment#parseOneContig(AlignedContig, SAMSequenceDictionary, boolean, int, int, boolean)}, except that
      * badly mapped (MQ < 60) 1st alignment is no longer skipped.
@@ -86,9 +89,13 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
                         "contig suggesting \"translocation\" is sent down the insert/deletion path.\n" + contig.toString());
             results.add(ca);
         }
+
+        if( results.size() > 1)
+            throw new GATKException("Expecting only no more than one simple chimera but got more!\n" + contig.toString() + "\n" + results.toString());
         return new Tuple2<>(contig.contigSequence,results);
     }
 
+    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
     public static List<VariantContext> produceVariantsFromSimpleChimeras(final JavaPairRDD<byte[], List<ChimericAlignment>> contigSeqAndChimeras,
                                                                          final SvDiscoveryInputData svDiscoveryInputData) {
 
@@ -102,9 +109,18 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
 
         final JavaPairRDD<NovelAdjacencyReferenceLocations, Iterable<ChimericAlignment>> narlsAndSources =
                 contigSeqAndChimeras
-                        .flatMapToPair(tigSeqAndChimeras ->
-                                discoverNovelAdjacencyFromChimericAlignments(tigSeqAndChimeras,
-                                        referenceSequenceDictionaryBroadcast.getValue()))   // a filter-passing contig's alignments may or may not produce novel adjacency, hence flatmap
+                        .flatMapToPair(tigSeqAndChimeras -> {
+                            final byte[] contigSeq = tigSeqAndChimeras._1;
+                            final List<ChimericAlignment> chimericAlignments = tigSeqAndChimeras._2;
+                            final Stream<Tuple2<NovelAdjacencyReferenceLocations, ChimericAlignment>> novelAdjacencyAndSourceChimera =
+                                    chimericAlignments.stream()
+                                            .map(ca -> new Tuple2<>(
+                                                    new NovelAdjacencyReferenceLocations(ca, contigSeq,
+                                                            referenceSequenceDictionaryBroadcast.getValue()), ca));
+                            return novelAdjacencyAndSourceChimera.iterator();
+                        })
+//                                discoverNovelAdjacencyFromChimericAlignments(tigSeqAndChimeras,
+//                                        referenceSequenceDictionaryBroadcast.getValue()))   // a filter-passing contig's alignments may or may not produce novel adjacency, hence flatmap
                         .groupByKey();                                                      // group the same novel adjacency produced by different contigs together
 
         narlsAndSources.cache();
@@ -117,15 +133,23 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
                         .mapToPair(noveltyAndEvidence -> new Tuple2<>(noveltyAndEvidence._1,
                                 new Tuple2<>(inferTypeFromNovelAdjacency(noveltyAndEvidence._1), noveltyAndEvidence._2)))       // type inference based on novel adjacency and evidence alignments
                         .map(noveltyTypeAndEvidence ->
-                                annotateVariant(                                                                                // annotate the novel adjacency and inferred type
-                                        noveltyTypeAndEvidence._1,
-                                        noveltyTypeAndEvidence._2._1,
-                                        null,
-                                        noveltyTypeAndEvidence._2._2,
-                                        referenceBroadcast,
-                                        referenceSequenceDictionaryBroadcast,
-                                        cnvCallsBroadcast,
-                                        sampleId))
+                                {
+                                    final NovelAdjacencyReferenceLocations novelAdjacency = noveltyTypeAndEvidence._1;
+                                    final SimpleSVType inferredSimpleType = noveltyTypeAndEvidence._2._1;
+                                    final Iterable<ChimericAlignment> evidence = noveltyTypeAndEvidence._2._2;
+                                    return AnnotatedVariantProducer
+                                            .produceAnnotatedVcFromInferredTypeAndRefLocations(
+                                                    novelAdjacency.leftJustifiedLeftRefLoc,
+                                                    novelAdjacency.leftJustifiedRightRefLoc.getStart(),
+                                                    novelAdjacency.complication,
+                                                    inferredSimpleType,
+                                                    null, // TODO: 1/21/18 implement this for InsDel
+                                                    evidence,
+                                                    referenceBroadcast,
+                                                    referenceSequenceDictionaryBroadcast,
+                                                    cnvCallsBroadcast,
+                                                    sampleId);
+                                })
                         .collect();
 
         narlsAndSources.unpersist();
@@ -135,12 +159,7 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
 
     //==================================================================================================================
 
-    private static Iterator<Tuple2<NovelAdjacencyReferenceLocations, ChimericAlignment>>
-    discoverNovelAdjacencyFromChimericAlignments(final Tuple2<byte[], List<ChimericAlignment>> tigSeqAndChimeras, final SAMSequenceDictionary referenceDictionary) {
-        return Utils.stream(tigSeqAndChimeras._2)
-                .map(ca -> new Tuple2<>(new NovelAdjacencyReferenceLocations(ca, tigSeqAndChimeras._1, referenceDictionary), ca)).iterator();
-    }
-
+    // TODO: 1/21/18 to be renamed and moved to new centralized class SimpleNovelAdjacencyInterpreter
     @VisibleForTesting
     public static SimpleSVType inferTypeFromNovelAdjacency(final NovelAdjacencyReferenceLocations novelAdjacencyReferenceLocations) {
 
@@ -191,21 +210,5 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
         }
 
         return type;
-    }
-
-    static VariantContext annotateVariant(final NovelAdjacencyReferenceLocations novelAdjacency,
-                                          final SvType inferredType,
-                                          final byte[] altHaplotypeSeq,
-                                          final Iterable<ChimericAlignment> chimericAlignments,
-                                          final Broadcast<ReferenceMultiSource> broadcastReference,
-                                          final Broadcast<SAMSequenceDictionary> broadcastSequenceDictionary,
-                                          final Broadcast<SVIntervalTree<VariantContext>> broadcastCNVCalls,
-                                          final String sampleId)
-            throws IOException {
-        return AnnotatedVariantProducer
-                .produceAnnotatedVcFromInferredTypeAndRefLocations(novelAdjacency.leftJustifiedLeftRefLoc,
-                        novelAdjacency.leftJustifiedRightRefLoc.getStart(), novelAdjacency.complication,
-                        inferredType, altHaplotypeSeq, chimericAlignments,
-                        broadcastReference, broadcastSequenceDictionary, broadcastCNVCalls, sampleId);
     }
 }

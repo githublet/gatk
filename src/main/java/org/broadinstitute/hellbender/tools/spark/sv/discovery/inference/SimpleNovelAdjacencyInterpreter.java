@@ -9,15 +9,12 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.broadcast.Broadcast;
 import org.broadinstitute.hellbender.engine.datasources.ReferenceMultiSource;
 import org.broadinstitute.hellbender.exceptions.GATKException;
-import org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection;
 import org.broadinstitute.hellbender.tools.spark.sv.StructuralVariationDiscoveryArgumentCollection.DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.*;
-import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignmentInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AssemblyContigWithFineTunedAlignments;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.StrandSwitch;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVIntervalTree;
-import org.broadinstitute.hellbender.utils.Utils;
 import scala.Tuple2;
 
 import java.util.Arrays;
@@ -54,8 +51,8 @@ public final class SimpleNovelAdjacencyInterpreter {
                                                 referenceBroadcast.getValue(), referenceSequenceDictionaryBroadcast.getValue())));
     }
 
-    JavaRDD<SimpleNovelAdjacency> getSimpleNovelAdjacencyJavaRDD(final JavaRDD<AssemblyContigWithFineTunedAlignments> assemblyContigs,
-                                                                 final SvDiscoveryInputData svDiscoveryInputData) {
+    private JavaRDD<SimpleNovelAdjacency> getSimpleNovelAdjacencyJavaRDD(final JavaRDD<AssemblyContigWithFineTunedAlignments> assemblyContigs,
+                                                                         final SvDiscoveryInputData svDiscoveryInputData) {
         final String sampleId = svDiscoveryInputData.sampleId;
         final Logger toolLogger = svDiscoveryInputData.toolLogger;
         final Broadcast<SAMSequenceDictionary> referenceSequenceDictionaryBroadcast = svDiscoveryInputData.referenceSequenceDictionaryBroadcast;
@@ -67,11 +64,11 @@ public final class SimpleNovelAdjacencyInterpreter {
         final JavaRDD<SimpleNovelAdjacency> simpleNovelAdjacencies =
                 assemblyContigs
                         .filter(tig ->
-                                splitPairStrongEnoughEvidenceForCA(tig.getSourceContig().alignmentIntervals.get(0),
+                                ChimericAlignment.splitPairStrongEnoughEvidenceForCA(tig.getSourceContig().alignmentIntervals.get(0),
                                         tig.getSourceContig().alignmentIntervals.get(1),
                                         MORE_RELAXED_ALIGNMENT_MIN_MQ, MORE_RELAXED_ALIGNMENT_MIN_LENGTH))
                         .mapToPair(tig -> {
-                            final ChimericAlignment simpleChimera = extractSimpleChimera(tig,
+                            final ChimericAlignment simpleChimera = ChimericAlignment.extractSimpleChimera(tig,
                                     referenceSequenceDictionaryBroadcast.getValue());
                             final byte[] contigSequence = tig.getSourceContig().contigSequence;
                             final NovelAdjacencyReferenceLocations novelAdjacencyReferenceLocations =
@@ -90,47 +87,6 @@ public final class SimpleNovelAdjacencyInterpreter {
                 simpleNovelAdjacencies.map(SimpleNovelAdjacency::getNovelAdjacencyReferenceLocations).collect(),
                 referenceSequenceDictionaryBroadcast.getValue(), discoverStageArgs, toolLogger);
         return simpleNovelAdjacencies;
-    }
-
-    // todo: move to ChimericAlignment
-    /**
-     * Roughly similar to {@link ChimericAlignment#nextAlignmentMayBeInsertion(AlignmentInterval, AlignmentInterval, Integer, Integer, boolean)}:
-     *  1) either alignment may have very low mapping quality (a more relaxed mapping quality threshold);
-     *  2) either alignment may consume only a "short" part of the contig, or if assuming that the alignment consumes
-     *     roughly the same amount of ref bases and read bases, has isAlignment that is too short
-     */
-    static boolean splitPairStrongEnoughEvidenceForCA(final AlignmentInterval intervalOne,
-                                                      final AlignmentInterval intervalTwo,
-                                                      final int mapQThresholdInclusive,
-                                                      final int alignmentLengthThresholdInclusive) {
-
-        if (intervalOne.mapQual < mapQThresholdInclusive || intervalTwo.mapQual < mapQThresholdInclusive)
-            return false;
-
-        final int overlap = AlignmentInterval.overlapOnContig(intervalOne, intervalTwo);
-
-        return Math.min(intervalOne.getSizeOnRead() - overlap, intervalTwo.getSizeOnRead() - overlap)
-                >= alignmentLengthThresholdInclusive;
-    }
-
-    // TODO: 1/19/18 similar functionality to InsDelVariantDetector.convertAlignmentIntervalToChimericAlignment, and to be pushed to ChimericAlignment
-    /**
-     * @return a simple chimera indicated by the alignments of the input contig;
-     *         if the input chimeric alignments are not strong enough to support an CA, a {@code null} is returned
-     *
-     * @throws IllegalArgumentException if the input contig doesn't have exactly two good input alignments
-     */
-    static ChimericAlignment extractSimpleChimera(final AssemblyContigWithFineTunedAlignments contig,
-                                                  final SAMSequenceDictionary referenceDictionary) {
-        Utils.validateArg(contig.hasOnly2GoodAlignments(),
-                "assembly contig sent to the wrong path: assumption that contig has only 2 good alignments is violated for\n" +
-                        contig.toString());
-
-        final AlignmentInterval alignmentOne = contig.getSourceContig().alignmentIntervals.get(0);
-        final AlignmentInterval alignmentTwo = contig.getSourceContig().alignmentIntervals.get(1);
-
-        return new ChimericAlignment(alignmentOne, alignmentTwo, contig.getInsertionMappings(),
-                contig.getSourceContig().contigName, referenceDictionary);
     }
 
     static List<SvType> inferTypeFromNovelAdjacency(final SimpleNovelAdjacency simpleNovelAdjacency,

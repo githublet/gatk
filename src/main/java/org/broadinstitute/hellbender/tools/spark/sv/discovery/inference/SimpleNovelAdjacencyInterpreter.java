@@ -86,9 +86,17 @@ public final class SimpleNovelAdjacencyInterpreter {
         SvDiscoveryUtils.evaluateIntervalsAndNarls(assembledIntervals,
                 simpleNovelAdjacencies.map(SimpleNovelAdjacency::getNovelAdjacencyReferenceLocations).collect(),
                 referenceSequenceDictionaryBroadcast.getValue(), discoverStageArgs, toolLogger);
+
         return simpleNovelAdjacencies;
     }
 
+    /**
+     * Main method: given simple novel adjacency
+     *  (that is, affected reference locations, alt haplotype sequence, and chimeric alignment evidence),
+     *  infer type.
+     *
+     * @return the inferred type could be a single entry for simple variants, or a list of two entries with BND mates.
+     */
     static List<SvType> inferTypeFromNovelAdjacency(final SimpleNovelAdjacency simpleNovelAdjacency,
                                                     final ReferenceMultiSource reference, final SAMSequenceDictionary referenceDictionary) {
 

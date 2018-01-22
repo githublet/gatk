@@ -15,7 +15,11 @@ import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.Assembly
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVVCFWriter;
 import scala.Tuple2;
 
+import static org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.SimpleNovelAdjacencyInterpreter.MORE_RELAXED_ALIGNMENT_MIN_LENGTH;
+import static org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.SimpleNovelAdjacencyInterpreter.MORE_RELAXED_ALIGNMENT_MIN_MQ;
+
 // TODO: 1/21/18 this class will do nothing more than what new centralized class SimpleNovelAdjacencyInterpreter, hence will be removed
+@Deprecated
 public final class SuspectedTransLocDetector implements VariantDetectorFromLocalAssemblyContigAlignments {
 
 
@@ -35,10 +39,10 @@ public final class SuspectedTransLocDetector implements VariantDetectorFromLocal
         final JavaPairRDD<ChimericAlignment, byte[]> chimeraAndSequence =
                 assemblyContigs
                         .filter(decoratedTig ->
-                                SimpleStrandSwitchVariantDetector.splitPairStrongEnoughEvidenceForCA(
+                                ChimericAlignment.splitPairStrongEnoughEvidenceForCA(
                                                 decoratedTig.getSourceContig().alignmentIntervals.get(0), decoratedTig.getSourceContig().alignmentIntervals.get(1),
-                                        SimpleStrandSwitchVariantDetector.MORE_RELAXED_ALIGNMENT_MIN_MQ,
-                                        SimpleStrandSwitchVariantDetector.MORE_RELAXED_ALIGNMENT_MIN_LENGTH))
+                                        MORE_RELAXED_ALIGNMENT_MIN_MQ,
+                                        MORE_RELAXED_ALIGNMENT_MIN_LENGTH))
                         .mapToPair(decoratedTig ->
                                 convertAlignmentIntervalsToChimericAlignment(decoratedTig.getSourceContig(),
                                         referenceSequenceDictionaryBroadcast.getValue())).cache();

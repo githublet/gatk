@@ -18,20 +18,15 @@ import org.broadinstitute.hellbender.tools.spark.sv.utils.RDDUtils;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVVCFWriter;
 import org.broadinstitute.hellbender.utils.Utils;
 import scala.Tuple2;
-import scala.Tuple3;
 
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+
+import static org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.SimpleNovelAdjacencyInterpreter.MORE_RELAXED_ALIGNMENT_MIN_LENGTH;
+import static org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.SimpleNovelAdjacencyInterpreter.MORE_RELAXED_ALIGNMENT_MIN_MQ;
 
 // TODO: 1/21/18 all methods, except inferInvDupRange(), in this class will do nothing more than what new centralized class SimpleNovelAdjacencyInterpreter, hence will be removed
+@Deprecated
 public final class SimpleStrandSwitchVariantDetector implements VariantDetectorFromLocalAssemblyContigAlignments {
-
-
-    static final int MORE_RELAXED_ALIGNMENT_MIN_LENGTH = 30;
-    static final int MORE_RELAXED_ALIGNMENT_MIN_MQ = 20;
 
     @Override
     public void inferSvAndWriteVCF(final JavaRDD<AssemblyContigWithFineTunedAlignments> assemblyContigs,
@@ -90,29 +85,6 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
                 contigWith2AIMappedToSameChrAndStrandSwitch.contigName, referenceDictionary.getValue()), contigWith2AIMappedToSameChrAndStrandSwitch.contigSequence);
     }
 
-    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
-    /**
-     * Roughly similar to {@link ChimericAlignment#nextAlignmentMayBeInsertion(AlignmentInterval, AlignmentInterval, Integer, Integer, boolean)}:
-     *  1) either alignment may have very low mapping quality (a more relaxed mapping quality threshold);
-     *  2) either alignment may consume only a "short" part of the contig, or if assuming that the alignment consumes
-     *     roughly the same amount of ref bases and read bases, has isAlignment that is too short
-     */
-    static boolean splitPairStrongEnoughEvidenceForCA(final AlignmentInterval intervalOne,
-                                                      final AlignmentInterval intervalTwo,
-                                                      final int mapQThresholdInclusive,
-                                                      final int alignmentLengthThresholdInclusive) {
-
-        if (intervalOne.mapQual < mapQThresholdInclusive || intervalTwo.mapQual < mapQThresholdInclusive)
-            return false;
-
-        final int overlap = AlignmentInterval.overlapOnContig(intervalOne, intervalTwo);
-
-        final int x = intervalOne.endInAssembledContig - intervalOne.startInAssembledContig + 1,
-                  y = intervalTwo.endInAssembledContig - intervalTwo.startInAssembledContig + 1;
-
-        return Math.min(x - overlap, y - overlap) >= alignmentLengthThresholdInclusive;
-    }
-
     // =================================================================================================================
 
     // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
@@ -126,7 +98,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
         final JavaPairRDD<ChimericAlignment, byte[]> simpleStrandSwitchBkpts =
                 contigs
                         .filter(tig ->
-                                splitPairStrongEnoughEvidenceForCA(tig.alignmentIntervals.get(0), tig.alignmentIntervals.get(1),
+                                ChimericAlignment.splitPairStrongEnoughEvidenceForCA(tig.alignmentIntervals.get(0), tig.alignmentIntervals.get(1),
                                         MORE_RELAXED_ALIGNMENT_MIN_MQ,  MORE_RELAXED_ALIGNMENT_MIN_LENGTH))
                         .mapToPair(tig -> convertAlignmentIntervalsToChimericAlignment(tig, broadcastSequenceDictionary)).cache();
 
@@ -170,7 +142,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
         final JavaPairRDD<ChimericAlignment, byte[]> invDupSuspects =
                 contigs
                         .filter(tig ->
-                                splitPairStrongEnoughEvidenceForCA(tig.alignmentIntervals.get(0), tig.alignmentIntervals.get(1),
+                                ChimericAlignment.splitPairStrongEnoughEvidenceForCA(tig.alignmentIntervals.get(0), tig.alignmentIntervals.get(1),
                                         MORE_RELAXED_ALIGNMENT_MIN_MQ,  MORE_RELAXED_ALIGNMENT_MIN_LENGTH))
                         .mapToPair(tig -> convertAlignmentIntervalsToChimericAlignment(tig, broadcastSequenceDictionary)).cache();
 
@@ -179,7 +151,7 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
         return invDupSuspects
                 .mapToPair(pair -> new Tuple2<>(new NovelAdjacencyReferenceLocations(pair._1, pair._2, broadcastSequenceDictionary.getValue()), new Tuple2<>(pair._1, pair._2)))
                 .groupByKey()
-                .flatMapToPair(SimpleStrandSwitchVariantDetector::inferInvDupRange)
+                .flatMapToPair(SimpleNovelAdjacencyInterpreter::inferInvDupRange)
                 .map(noveltyTypeAndAltSeqAndEvidence -> {
                             final NovelAdjacencyReferenceLocations novelAdjacency = noveltyTypeAndAltSeqAndEvidence._1._1();
                             final SimpleSVType.DuplicationInverted invDup = noveltyTypeAndAltSeqAndEvidence._1._2();
@@ -202,28 +174,4 @@ public final class SimpleStrandSwitchVariantDetector implements VariantDetectorF
                 });
     }
 
-    // TODO: 1/21/18 the only method that needs to be moved into the new centralized class
-    private static Iterator<Tuple2<Tuple3<NovelAdjacencyReferenceLocations, SimpleSVType.DuplicationInverted, byte[]>, List<ChimericAlignment>>>
-    inferInvDupRange(final Tuple2<NovelAdjacencyReferenceLocations, Iterable<Tuple2<ChimericAlignment, byte[]>>> noveltyAndEvidence) {
-
-        final NovelAdjacencyReferenceLocations novelAdjacency = noveltyAndEvidence._1;
-        final SimpleSVType.DuplicationInverted duplicationInverted = new SimpleSVType.DuplicationInverted(novelAdjacency);
-
-        // doing this because the same novel adjacency reference locations might be induced by different (probably only slightly) alt haplotypes, so a single group by NARL is not enough
-        final Iterable<Tuple2<ChimericAlignment, byte[]>> chimeraAndContigSeq = noveltyAndEvidence._2;
-        final Set<Map.Entry<byte[], List<ChimericAlignment>>> alignmentEvidenceGroupedByAltHaplotypeSequence =
-                Utils.stream(chimeraAndContigSeq)
-                        .collect(
-                                Collectors.groupingBy(caAndSeq ->
-                                                novelAdjacency.complication.extractAltHaplotypeForInvDup(caAndSeq._1, caAndSeq._2),
-                                        Collectors.mapping(caAndSeq -> caAndSeq._1, Collectors.toList())
-                                )
-                        )
-                        .entrySet();
-
-        return alignmentEvidenceGroupedByAltHaplotypeSequence.stream()
-                .map(entry -> new Tuple2<>(new Tuple3<>(novelAdjacency, duplicationInverted, entry.getKey()),
-                        entry.getValue()))
-                .iterator();
-    }
 }

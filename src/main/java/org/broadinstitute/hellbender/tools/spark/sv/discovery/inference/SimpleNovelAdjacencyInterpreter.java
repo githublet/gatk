@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.spark.sv.discovery.inference;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.variantcontext.VariantContext;
@@ -15,11 +16,12 @@ import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.Assembly
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.StrandSwitch;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVIntervalTree;
+import org.broadinstitute.hellbender.utils.Utils;
 import scala.Tuple2;
+import scala.Tuple3;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * This deals with the special case where a contig has exactly two alignments
@@ -122,7 +124,7 @@ public final class SimpleNovelAdjacencyInterpreter {
                     BreakEndVariantType.InvSuspectBND.getOrderedMates(novelAdjacency, reference);
             inferredType = Arrays.asList(orderedMatesForInversionSuspect._1, orderedMatesForInversionSuspect._2);
         } else if ( allIndicateInsDel ){
-            inferredType = Collections.singletonList( InsDelVariantDetector.inferTypeFromNovelAdjacency(novelAdjacency) );
+            inferredType = Collections.singletonList( inferTypeFromNovelAdjacency(novelAdjacency) );
         } else {
             throw new GATKException
                     .ShouldNeverReachHereException("novel adjacency has its supporting chimeric alignments showing inconsistent behavior\n" +
@@ -131,4 +133,83 @@ public final class SimpleNovelAdjacencyInterpreter {
 
         return inferredType;
     }
+
+    // TODO: 1/21/18 to be renamed and moved to new centralized class SimpleNovelAdjacencyInterpreter
+    @VisibleForTesting
+    public static SimpleSVType inferTypeFromNovelAdjacency(final NovelAdjacencyReferenceLocations novelAdjacencyReferenceLocations) {
+
+        final int start = novelAdjacencyReferenceLocations.leftJustifiedLeftRefLoc.getEnd();
+        final int end = novelAdjacencyReferenceLocations.leftJustifiedRightRefLoc.getStart();
+        final StrandSwitch strandSwitch = novelAdjacencyReferenceLocations.strandSwitch;
+
+        final SimpleSVType type;
+        if (strandSwitch == StrandSwitch.NO_SWITCH) { // no strand switch happening, so no inversion
+            if (start==end) { // something is inserted
+                final boolean hasNoDupSeq = !novelAdjacencyReferenceLocations.complication.hasDuplicationAnnotation();
+                final boolean hasNoInsertedSeq = novelAdjacencyReferenceLocations.complication.getInsertedSequenceForwardStrandRep().isEmpty();
+                if (hasNoDupSeq) {
+                    if (hasNoInsertedSeq) {
+                        throw new GATKException("Something went wrong in type inference, there's suspected insertion happening but no inserted sequence could be inferred "
+                                + novelAdjacencyReferenceLocations.toString());
+                    } else {
+                        type = new SimpleSVType.Insertion(novelAdjacencyReferenceLocations); // simple insertion (no duplication)
+                    }
+                } else {
+                    if (hasNoInsertedSeq) {
+                        type = new SimpleSVType.DuplicationTandem(novelAdjacencyReferenceLocations); // clean expansion of repeat 1 -> 2, or complex expansion
+                    } else {
+                        type = new SimpleSVType.DuplicationTandem(novelAdjacencyReferenceLocations); // expansion of 1 repeat on ref to 2 repeats on alt with inserted sequence in between the 2 repeats
+                    }
+                }
+            } else {
+                final boolean hasNoDupSeq = !novelAdjacencyReferenceLocations.complication.hasDuplicationAnnotation();
+                final boolean hasNoInsertedSeq = novelAdjacencyReferenceLocations.complication.getInsertedSequenceForwardStrandRep().isEmpty();
+                if (hasNoDupSeq) {
+                    if (hasNoInsertedSeq) {
+                        type = new SimpleSVType.Deletion(novelAdjacencyReferenceLocations); // clean deletion
+                    } else {
+                        type = new SimpleSVType.Deletion(novelAdjacencyReferenceLocations); // scarred deletion
+                    }
+                } else {
+                    if (hasNoInsertedSeq) {
+                        type = new SimpleSVType.Deletion(novelAdjacencyReferenceLocations); // clean contraction of repeat 2 -> 1, or complex contraction
+                    } else {
+                        throw new GATKException("Something went wrong in novel adjacency interpretation: " +
+                                " inferring simple SV type from a novel adjacency between two different reference locations, but annotated with both inserted sequence and duplication, which is NOT simple.\n"
+                                + novelAdjacencyReferenceLocations.toString());
+                    }
+                }
+            }
+        } else {
+            type = new SimpleSVType.Inversion(novelAdjacencyReferenceLocations);
+        }
+
+        return type;
+    }
+
+    // TODO: 1/21/18 hookup at the right place (right now no variants are using this any way because inverted duplication contigs are filtered out)
+    static Iterator<Tuple2<Tuple3<NovelAdjacencyReferenceLocations, SimpleSVType.DuplicationInverted, byte[]>, List<ChimericAlignment>>>
+    inferInvDupRange(final Tuple2<NovelAdjacencyReferenceLocations, Iterable<Tuple2<ChimericAlignment, byte[]>>> noveltyAndEvidence) {
+
+        final NovelAdjacencyReferenceLocations novelAdjacency = noveltyAndEvidence._1;
+        final SimpleSVType.DuplicationInverted duplicationInverted = new SimpleSVType.DuplicationInverted(novelAdjacency);
+
+        // doing this because the same novel adjacency reference locations might be induced by different (probably only slightly) alt haplotypes, so a single group by NARL is not enough
+        final Iterable<Tuple2<ChimericAlignment, byte[]>> chimeraAndContigSeq = noveltyAndEvidence._2;
+        final Set<Map.Entry<byte[], List<ChimericAlignment>>> alignmentEvidenceGroupedByAltHaplotypeSequence =
+                Utils.stream(chimeraAndContigSeq)
+                        .collect(
+                                Collectors.groupingBy(caAndSeq ->
+                                                novelAdjacency.complication.extractAltHaplotypeForInvDup(caAndSeq._1, caAndSeq._2),
+                                        Collectors.mapping(caAndSeq -> caAndSeq._1, Collectors.toList())
+                                )
+                        )
+                        .entrySet();
+
+        return alignmentEvidenceGroupedByAltHaplotypeSequence.stream()
+                .map(entry -> new Tuple2<>(new Tuple3<>(novelAdjacency, duplicationInverted, entry.getKey()),
+                        entry.getValue()))
+                .iterator();
+    }
+
 }

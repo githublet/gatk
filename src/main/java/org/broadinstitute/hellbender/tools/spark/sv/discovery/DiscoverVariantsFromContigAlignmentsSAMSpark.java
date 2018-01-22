@@ -151,7 +151,10 @@ public final class DiscoverVariantsFromContigAlignmentsSAMSpark extends GATKSpar
                                                 true, DEFAULT_MIN_ALIGNMENT_LENGTH,
                                                 CHIMERIC_ALIGNMENTS_HIGHMQ_THRESHOLD, true)));
 
-        return InsDelVariantDetector.produceVariantsFromSimpleChimeras(contigSeqAndChimeras, svDiscoveryInputData);
+        @SuppressWarnings( "deprecation" )
+        final List<VariantContext> variantContexts = InsDelVariantDetector
+                .produceVariantsFromSimpleChimeras(contigSeqAndChimeras, svDiscoveryInputData);
+        return variantContexts;
     }
 
 }

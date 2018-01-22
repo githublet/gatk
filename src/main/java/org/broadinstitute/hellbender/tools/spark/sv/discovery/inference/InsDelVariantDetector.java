@@ -1,6 +1,5 @@
 package org.broadinstitute.hellbender.tools.spark.sv.discovery.inference;
 
-import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.logging.log4j.Logger;
@@ -17,7 +16,6 @@ import org.broadinstitute.hellbender.tools.spark.sv.discovery.SvDiscoveryUtils;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignedContig;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AlignmentInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.AssemblyContigWithFineTunedAlignments;
-import org.broadinstitute.hellbender.tools.spark.sv.discovery.alignment.StrandSwitch;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVInterval;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVIntervalTree;
 import org.broadinstitute.hellbender.tools.spark.sv.utils.SVVCFWriter;
@@ -28,7 +26,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.stream.Stream;
 
-
+@Deprecated
 public final class InsDelVariantDetector implements VariantDetectorFromLocalAssemblyContigAlignments {
 
     @Override
@@ -43,24 +41,28 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
         final JavaPairRDD<byte[], List<ChimericAlignment>> contigSeqAndChimeras =
                 assemblyContigs
                         .map( AssemblyContigWithFineTunedAlignments::getSourceContig )
-                        .mapToPair(tig -> convertAlignmentIntervalToChimericAlignment(tig,
+                        .mapToPair(tig ->
+                                org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.InsDelVariantDetector
+                                        .convertAlignmentIntervalToChimericAlignment(tig,
                                 StructuralVariationDiscoveryArgumentCollection.
                                         DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection.CHIMERIC_ALIGNMENTS_HIGHMQ_THRESHOLD,
                                 StructuralVariationDiscoveryArgumentCollection.
                                         DiscoverVariantsFromContigsAlignmentsSparkArgumentCollection.DEFAULT_MIN_ALIGNMENT_LENGTH,
                                 referenceSequenceDictionaryBroadcast.getValue()));
 
-        final List<VariantContext> annotatedInsDels = produceVariantsFromSimpleChimeras(contigSeqAndChimeras, svDiscoveryInputData);
+        final List<VariantContext> annotatedInsDels =
+                org.broadinstitute.hellbender.tools.spark.sv.discovery.inference.InsDelVariantDetector
+                        .produceVariantsFromSimpleChimeras(contigSeqAndChimeras, svDiscoveryInputData);
 
         SVVCFWriter.writeVCF(annotatedInsDels, outputPath,
                 referenceSequenceDictionaryBroadcast.getValue(), toolLogger);
     }
 
-    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
     /**
      * Very similar to {@link ChimericAlignment#parseOneContig(AlignedContig, SAMSequenceDictionary, boolean, int, int, boolean)}, except that
      * badly mapped (MQ < 60) 1st alignment is no longer skipped.
      */
+    @Deprecated
     private static Tuple2<byte[], List<ChimericAlignment>> convertAlignmentIntervalToChimericAlignment (final AlignedContig contig,
                                                                                                         final int mapQualThresholdInclusive,
                                                                                                         final int minAlignmentBlockSize,
@@ -95,7 +97,7 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
         return new Tuple2<>(contig.contigSequence,results);
     }
 
-    // TODO: 1/21/18 to be replaced with corresponding method in new centralized class SimpleNovelAdjacencyInterpreter
+    @Deprecated
     public static List<VariantContext> produceVariantsFromSimpleChimeras(final JavaPairRDD<byte[], List<ChimericAlignment>> contigSeqAndChimeras,
                                                                          final SvDiscoveryInputData svDiscoveryInputData) {
 
@@ -119,8 +121,6 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
                                                             referenceSequenceDictionaryBroadcast.getValue()), ca));
                             return novelAdjacencyAndSourceChimera.iterator();
                         })
-//                                discoverNovelAdjacencyFromChimericAlignments(tigSeqAndChimeras,
-//                                        referenceSequenceDictionaryBroadcast.getValue()))   // a filter-passing contig's alignments may or may not produce novel adjacency, hence flatmap
                         .groupByKey();                                                      // group the same novel adjacency produced by different contigs together
 
         narlsAndSources.cache();
@@ -131,7 +131,7 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
         List<VariantContext> annotatedVariants =
                 narlsAndSources
                         .mapToPair(noveltyAndEvidence -> new Tuple2<>(noveltyAndEvidence._1,
-                                new Tuple2<>(inferTypeFromNovelAdjacency(noveltyAndEvidence._1), noveltyAndEvidence._2)))       // type inference based on novel adjacency and evidence alignments
+                                new Tuple2<>(SimpleNovelAdjacencyInterpreter.inferTypeFromNovelAdjacency(noveltyAndEvidence._1), noveltyAndEvidence._2)))       // type inference based on novel adjacency and evidence alignments
                         .map(noveltyTypeAndEvidence ->
                                 {
                                     final NovelAdjacencyReferenceLocations novelAdjacency = noveltyTypeAndEvidence._1;
@@ -155,60 +155,5 @@ public final class InsDelVariantDetector implements VariantDetectorFromLocalAsse
         narlsAndSources.unpersist();
 
         return annotatedVariants;
-    }
-
-    //==================================================================================================================
-
-    // TODO: 1/21/18 to be renamed and moved to new centralized class SimpleNovelAdjacencyInterpreter
-    @VisibleForTesting
-    public static SimpleSVType inferTypeFromNovelAdjacency(final NovelAdjacencyReferenceLocations novelAdjacencyReferenceLocations) {
-
-        final int start = novelAdjacencyReferenceLocations.leftJustifiedLeftRefLoc.getEnd();
-        final int end = novelAdjacencyReferenceLocations.leftJustifiedRightRefLoc.getStart();
-        final StrandSwitch strandSwitch = novelAdjacencyReferenceLocations.strandSwitch;
-
-        final SimpleSVType type;
-        if (strandSwitch == StrandSwitch.NO_SWITCH) { // no strand switch happening, so no inversion
-            if (start==end) { // something is inserted
-                final boolean hasNoDupSeq = !novelAdjacencyReferenceLocations.complication.hasDuplicationAnnotation();
-                final boolean hasNoInsertedSeq = novelAdjacencyReferenceLocations.complication.getInsertedSequenceForwardStrandRep().isEmpty();
-                if (hasNoDupSeq) {
-                    if (hasNoInsertedSeq) {
-                        throw new GATKException("Something went wrong in type inference, there's suspected insertion happening but no inserted sequence could be inferred "
-                                + novelAdjacencyReferenceLocations.toString());
-                    } else {
-                        type = new SimpleSVType.Insertion(novelAdjacencyReferenceLocations); // simple insertion (no duplication)
-                    }
-                } else {
-                    if (hasNoInsertedSeq) {
-                        type = new SimpleSVType.DuplicationTandem(novelAdjacencyReferenceLocations); // clean expansion of repeat 1 -> 2, or complex expansion
-                    } else {
-                        type = new SimpleSVType.DuplicationTandem(novelAdjacencyReferenceLocations); // expansion of 1 repeat on ref to 2 repeats on alt with inserted sequence in between the 2 repeats
-                    }
-                }
-            } else {
-                final boolean hasNoDupSeq = !novelAdjacencyReferenceLocations.complication.hasDuplicationAnnotation();
-                final boolean hasNoInsertedSeq = novelAdjacencyReferenceLocations.complication.getInsertedSequenceForwardStrandRep().isEmpty();
-                if (hasNoDupSeq) {
-                    if (hasNoInsertedSeq) {
-                        type = new SimpleSVType.Deletion(novelAdjacencyReferenceLocations); // clean deletion
-                    } else {
-                        type = new SimpleSVType.Deletion(novelAdjacencyReferenceLocations); // scarred deletion
-                    }
-                } else {
-                    if (hasNoInsertedSeq) {
-                        type = new SimpleSVType.Deletion(novelAdjacencyReferenceLocations); // clean contraction of repeat 2 -> 1, or complex contraction
-                    } else {
-                        throw new GATKException("Something went wrong in novel adjacency interpretation: " +
-                                " inferring simple SV type from a novel adjacency between two different reference locations, but annotated with both inserted sequence and duplication, which is NOT simple.\n"
-                                + novelAdjacencyReferenceLocations.toString());
-                    }
-                }
-            }
-        } else {
-            type = new SimpleSVType.Inversion(novelAdjacencyReferenceLocations);
-        }
-
-        return type;
     }
 }

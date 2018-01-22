@@ -34,7 +34,7 @@ public class SimpleSvTypeUnitTest extends GATKBaseTest {
                                final int expectedSvLen,
                                final String expectedFirstFieldInIdString) throws IOException {
 
-        final SvType SvType = SimpleNovelAdjacencyInterpreter.inferTypeFromNovelAdjacency(novelAdjacencyReferenceLocations);
+        final SvType SvType = SimpleNovelAdjacencyInterpreter.inferSimpleTypeFromNovelAdjacency(novelAdjacencyReferenceLocations);
         final List<Allele> producedAlleles = AnnotatedVariantProducer.produceAlleles(novelAdjacencyReferenceLocations.leftJustifiedLeftRefLoc, SVDiscoveryTestDataProvider.reference, SvType);
 
         Assert.assertEquals(producedAlleles.size(), 2);

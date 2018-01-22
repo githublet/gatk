@@ -49,7 +49,7 @@ public final class SimpleNovelAdjacencyInterpreter {
         return simpleNovelAdjacencies
                         .mapToPair(simpleNovelAdjacency ->
                                 new Tuple2<>(simpleNovelAdjacency,
-                                        inferTypeFromNovelAdjacency(simpleNovelAdjacency,
+                                        inferSimpleOrBNDTypesFromNovelAdjacency(simpleNovelAdjacency,
                                                 referenceBroadcast.getValue(), referenceSequenceDictionaryBroadcast.getValue())));
     }
 
@@ -99,8 +99,8 @@ public final class SimpleNovelAdjacencyInterpreter {
      *
      * @return the inferred type could be a single entry for simple variants, or a list of two entries with BND mates.
      */
-    static List<SvType> inferTypeFromNovelAdjacency(final SimpleNovelAdjacency simpleNovelAdjacency,
-                                                    final ReferenceMultiSource reference, final SAMSequenceDictionary referenceDictionary) {
+    static List<SvType> inferSimpleOrBNDTypesFromNovelAdjacency(final SimpleNovelAdjacency simpleNovelAdjacency,
+                                                                final ReferenceMultiSource reference, final SAMSequenceDictionary referenceDictionary) {
 
         // based on characteristic of simple chimera, infer type
         final List<ChimericAlignment> alignmentEvidence = simpleNovelAdjacency.getAlignmentEvidence();
@@ -124,7 +124,7 @@ public final class SimpleNovelAdjacencyInterpreter {
                     BreakEndVariantType.InvSuspectBND.getOrderedMates(novelAdjacency, reference);
             inferredType = Arrays.asList(orderedMatesForInversionSuspect._1, orderedMatesForInversionSuspect._2);
         } else if ( allIndicateInsDel ){
-            inferredType = Collections.singletonList( inferTypeFromNovelAdjacency(novelAdjacency) );
+            inferredType = Collections.singletonList( inferSimpleTypeFromNovelAdjacency(novelAdjacency) );
         } else {
             throw new GATKException
                     .ShouldNeverReachHereException("novel adjacency has its supporting chimeric alignments showing inconsistent behavior\n" +
@@ -134,9 +134,8 @@ public final class SimpleNovelAdjacencyInterpreter {
         return inferredType;
     }
 
-    // TODO: 1/21/18 to be renamed and moved to new centralized class SimpleNovelAdjacencyInterpreter
     @VisibleForTesting
-    public static SimpleSVType inferTypeFromNovelAdjacency(final NovelAdjacencyReferenceLocations novelAdjacencyReferenceLocations) {
+    public static SimpleSVType inferSimpleTypeFromNovelAdjacency(final NovelAdjacencyReferenceLocations novelAdjacencyReferenceLocations) {
 
         final int start = novelAdjacencyReferenceLocations.leftJustifiedLeftRefLoc.getEnd();
         final int end = novelAdjacencyReferenceLocations.leftJustifiedRightRefLoc.getStart();

@@ -228,17 +228,6 @@ public final class SvDiscoverFromLocalAssemblyContigAlignmentsSpark extends GATK
     private static void forNonComplexVariants(final EnumMap<RawTypes, JavaRDD<AssemblyContigWithFineTunedAlignments>> contigsByPossibleRawTypes,
                                               final SvDiscoveryInputData svDiscoveryInputData) {
 
-//        svDiscoveryInputData.updateOutputPath(outputDir+"/"+RawTypes.InsDel.name()+".vcf");
-//        new InsDelVariantDetector()
-//                .inferSvAndWriteVCF(contigsByPossibleRawTypes.get(RawTypes.InsDel), svDiscoveryInputData);
-//        svDiscoveryInputData.updateOutputPath(outputDir+"/"+RawTypes.IntraChrStrandSwitch.name()+".vcf");
-//        new SimpleStrandSwitchVariantDetector()
-//                .inferSvAndWriteVCF(contigsByPossibleRawTypes.get(RawTypes.IntraChrStrandSwitch), svDiscoveryInputData);
-//
-//        svDiscoveryInputData.updateOutputPath(outputDir+"/"+RawTypes.MappedInsertionBkpt.name()+".vcf");
-//        new SuspectedTransLocDetector()
-//                .inferSvAndWriteVCF(contigsByPossibleRawTypes.get(RawTypes.MappedInsertionBkpt), svDiscoveryInputData);
-
         final String sampleId = svDiscoveryInputData.sampleId;
         final Broadcast<ReferenceMultiSource> referenceBroadcast = svDiscoveryInputData.referenceBroadcast;
         final Broadcast<SAMSequenceDictionary> referenceSequenceDictionaryBroadcast = svDiscoveryInputData.referenceSequenceDictionaryBroadcast;
